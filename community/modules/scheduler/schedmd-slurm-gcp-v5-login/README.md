@@ -144,5 +144,7 @@ limitations under the License.
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_login_instance"></a> [login\_instance](#output\_login\_instance) | Login instance details. |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
