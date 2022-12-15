@@ -15,7 +15,7 @@
 */
 
 locals {
-  network_name    = var.network_name == null ? "${var.deployment_name}-net" : var.network_name
+  network_name    = var.network_name == null ? "primary-net" : var.network_name
   subnetwork_name = var.subnetwork_name == null ? "${var.deployment_name}-primary-subnet" : var.subnetwork_name
 
   # define a default subnetwork for cases in which no explicit subnetworks are
@@ -163,7 +163,7 @@ module "nat_ip_addresses" {
   # an external, regional (not global) IP address is suited for a regional NAT
   address_type = "EXTERNAL"
   global       = false
-  names        = [for idx in range(var.ips_per_nat) : "${local.network_name}-nat-ips-${each.value}-${idx}"]
+  names        = [for idx in range(var.ips_per_nat) : "${local.network_name}-nat-ips-${each.value}-${idx}"] #makstest26symbolsintheproj-net-nat-ips-1-1
 }
 
 module "cloud_router" {
