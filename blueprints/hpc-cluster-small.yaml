@@ -109,3 +109,4 @@ deployment_groups:
         settings:
           machine_type: e2-standard-2
           enable_shielded_vm: true
+          disable_login_public_ips: true
