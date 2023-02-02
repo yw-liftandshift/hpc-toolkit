@@ -28,14 +28,15 @@ deployment_groups:
         id: network1
         use: [project1]
 
-      - source: modules/file-system/filestore
-        kind: terraform
-        id: homefs
-        use:
-          - project1
-          - network1
-        settings:
-          local_mount: /home
+      # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+      # - source: modules/file-system/filestore
+      #   kind: terraform
+      #   id: homefs
+      #   use:
+      #     - project1
+      #     - network1
+      #   settings:
+      #     local_mount: /home
 
       - source: community/modules/compute/schedmd-slurm-gcp-v5-partition
         kind: terraform
