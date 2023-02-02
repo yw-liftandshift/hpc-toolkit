@@ -13,17 +13,6 @@ vars:
     - compute.googleapis.com
     - file.googleapis.com
     - iap.googleapis.com
-  budget_amount: ## set budget amount
-  budget_start_date_year: ## set budget start date year
-  budget_start_date_month: ## set budget start date month
-  budget_start_date_day: ## set budget start date day
-  budget_end_date_year: ## set budget end date year
-  budget_end_date_month: ## set budget end date month
-  budget_end_date_day: ## set budget end date day
-  owner: ## set owner email
-  manager: ## set manager email
-  budget_alert_spent_percents: []
-  budget_notifications_topic: ## set budget_notifications_topic
 
 deployment_groups:
   - group: primary
@@ -39,16 +28,6 @@ deployment_groups:
         kind: terraform
         id: network1
         use: [project1]
-
-      - source: ./community/modules/billing
-        kind: terraform
-        id: budget
-        use:
-          - project1
-        settings:
-          currency_code: CAD
-          threshold_rules: [0.25,0.5, 0.9,1.0]
-          
 
       - source: modules/file-system/filestore
         kind: terraform
