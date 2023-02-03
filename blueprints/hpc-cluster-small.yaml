@@ -92,4 +92,5 @@ deployment_groups:
         settings:
           machine_type: e2-standard-2
           enable_shielded_vm: true
-          disable_login_public_ips: true
+          # TODO(Marcus): This module doesn't have this variable defined. See how we can create it without public IPs.
+          # disable_login_public_ips: true
