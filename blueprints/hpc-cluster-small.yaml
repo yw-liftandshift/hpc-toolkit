@@ -44,7 +44,8 @@ deployment_groups:
         use:
           - project1
           - network1
-          - homefs
+          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+          # - homefs 
         settings:
           partition_name: debug
           node_count_dynamic_max: 2
@@ -59,7 +60,8 @@ deployment_groups:
         use:
           - project1
           - network1
-          - homefs
+          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+          # - homefs
         settings:
           partition_name: compute
           node_count_dynamic_max: 20
@@ -75,7 +77,8 @@ deployment_groups:
           - network1
           - debug_partition
           - compute_partition
-          - homefs
+          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+          # - homefs
         settings:
           enable_shielded_vm: true
 
