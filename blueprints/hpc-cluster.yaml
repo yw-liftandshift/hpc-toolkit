@@ -1,4 +1,4 @@
-blueprint_name: hpc-cluster-small
+blueprint_name: hpc-cluster
 
 vars:
   billing_account: ## Set GCP Billing Account Here ##
@@ -8,7 +8,9 @@ vars:
   deployment_name: ## Set Deployment Name Here ##
   region: ## Set Region Here ##
   zone: ## Set Zone Here ##
-  slurm_cluster_name: hpcsmall
+  machine_type: ## Set Machine Type Here ##
+  node_count_dynamic_max: ## Set Node Count Dynamic Max Here ##
+  slurm_cluster_name: hpccluster
   activate_apis:
     - compute.googleapis.com
     - iap.googleapis.com
@@ -45,7 +47,7 @@ deployment_groups:
           - project1
           - network1
           # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
-          # - homefs 
+          # - homefs
         settings:
           partition_name: debug
           node_count_dynamic_max: 2
@@ -64,9 +66,6 @@ deployment_groups:
           # - homefs
         settings:
           partition_name: compute
-          node_count_dynamic_max: 20
-          # machine_type: c2-standard-4 TODO(Marcus): Receive as a variable?
-          machine_type: e2-standard-4
           enable_shielded_vm: true
 
       - source: community/modules/scheduler/schedmd-slurm-gcp-v5-controller
