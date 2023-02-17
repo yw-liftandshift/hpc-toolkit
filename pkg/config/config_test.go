@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,6 +42,7 @@ var (
 	expectedYaml = []byte(`
 blueprint_name: simple
 vars:
+  project_id: test-project
   labels:
     ghpc_blueprint: simple
     deployment_name: deployment_name
@@ -56,7 +58,6 @@ deployment_groups:
     id: "vpc"
     settings:
       network_name: $"${var.deployment_name}_net
-      project_id: project_name
 `)
 	testModules = []Module{
 		{
@@ -75,8 +76,10 @@ deployment_groups:
 		"deployment_name": "deployment_name",
 	}
 	expectedSimpleBlueprint Blueprint = Blueprint{
-		BlueprintName:    "simple",
-		Vars:             map[string]interface{}{"labels": defaultLabels},
+		BlueprintName: "simple",
+		Vars: map[string]interface{}{
+			"project_id": "test-project",
+			"labels":     defaultLabels},
 		DeploymentGroups: []DeploymentGroup{{Name: "DeploymentGroup1", TerraformBackend: TerraformBackend{}, Modules: testModules}},
 		TerraformBackendDefaults: TerraformBackend{
 			Type:          "",
@@ -188,8 +191,11 @@ func getDeploymentConfigForTest() DeploymentConfig {
 	}
 	testBlueprint := Blueprint{
 		BlueprintName: "simple",
-		Validators:    []validatorConfig{},
-		Vars:          map[string]interface{}{"deployment_name": "deployment_name"},
+		Validators:    nil,
+		Vars: map[string]interface{}{
+			"deployment_name": "deployment_name",
+			"project_id":      "test-project",
+		},
 		TerraformBackendDefaults: TerraformBackend{
 			Type:          "",
 			Configuration: map[string]interface{}{},
@@ -206,7 +212,7 @@ func getDeploymentConfigForTest() DeploymentConfig {
 		},
 	}
 
-	return DeploymentConfig{
+	dc := DeploymentConfig{
 		Config: testBlueprint,
 		ModulesInfo: map[string]map[string]modulereader.ModuleInfo{
 			"group1": {
@@ -214,7 +220,12 @@ func getDeploymentConfigForTest() DeploymentConfig {
 				testModuleSourceWithLabels: testModuleInfo,
 			},
 		},
+		moduleConnections: []ModConnection{},
 	}
+	// the next two steps simulate relevant steps in ghpc expand
+	dc.addMetadataToModules()
+	dc.addDefaultValidators()
+	return dc
 }
 
 func getBasicDeploymentConfigWithTestModule() DeploymentConfig {
@@ -232,6 +243,34 @@ func getBasicDeploymentConfigWithTestModule() DeploymentConfig {
 	}
 	return DeploymentConfig{
 		Config: Blueprint{
+			BlueprintName:    "simple",
+			Vars:             map[string]interface{}{"deployment_name": "deployment_name"},
+			DeploymentGroups: []DeploymentGroup{testDeploymentGroup},
+		},
+	}
+}
+
+func getDeploymentConfigWithTestModuleEmptyKind() DeploymentConfig {
+	testModuleSource := filepath.Join(tmpTestDir, "module")
+	testDeploymentGroup := DeploymentGroup{
+		Name: "primary",
+		Modules: []Module{
+			{
+				ID:       "TestModule1",
+				Source:   testModuleSource,
+				Settings: map[string]interface{}{"test_variable": "test_value"},
+			},
+			{
+				ID:       "TestModule2",
+				Kind:     "",
+				Source:   testModuleSource,
+				Settings: map[string]interface{}{"test_variable": "test_value"},
+			},
+		},
+	}
+	return DeploymentConfig{
+		Config: Blueprint{
+			BlueprintName:    "simple",
 			Vars:             map[string]interface{}{"deployment_name": "deployment_name"},
 			DeploymentGroups: []DeploymentGroup{testDeploymentGroup},
 		},
@@ -243,6 +282,115 @@ func getBasicDeploymentConfigWithTestModule() DeploymentConfig {
 func (s *MySuite) TestExpandConfig(c *C) {
 	dc := getBasicDeploymentConfigWithTestModule()
 	dc.ExpandConfig()
+}
+
+func (s *MySuite) TestIsEmpty(c *C) {
+	// Use connection is not empty
+	conn := ModConnection{
+		kind:            useConnection,
+		sharedVariables: []string{"var1"},
+	}
+	got := conn.isEmpty()
+	exp := false
+	c.Assert(got, Equals, exp)
+
+	// Use connection is empty
+	conn = ModConnection{
+		kind:            useConnection,
+		sharedVariables: []string{},
+	}
+	got = conn.isEmpty()
+	exp = true
+	c.Assert(got, Equals, exp)
+
+	// Undefined connection kind
+	conn = ModConnection{}
+	got = conn.isEmpty()
+	exp = false
+	c.Assert(got, Equals, exp)
+}
+
+func (s *MySuite) TestListUnusedModules(c *C) {
+	dc := getDeploymentConfigForTest()
+
+	// No modules in "use"
+	got := dc.listUnusedModules()
+	c.Assert(got, HasLen, 0)
+
+	// All "use" modules actually used
+	usedConn := ModConnection{
+		toID:            "usedModule",
+		fromID:          "usingModule",
+		kind:            useConnection,
+		sharedVariables: []string{"var1"},
+	}
+	dc.moduleConnections = []ModConnection{usedConn}
+	got = dc.listUnusedModules()
+	c.Assert(got["usingModule"], HasLen, 0)
+
+	// One fully unused module
+	unusedConn := ModConnection{
+		toID:            "usedModule",
+		fromID:          "usingModule",
+		kind:            useConnection,
+		sharedVariables: []string{},
+	}
+	dc.moduleConnections = append(dc.moduleConnections, unusedConn)
+	got = dc.listUnusedModules()
+	c.Assert(got["usingModule"], HasLen, 1)
+
+	// Two fully unused modules
+	secondUnusedConn := ModConnection{
+		toID:            "secondUnusedModule",
+		fromID:          "usingModule",
+		kind:            useConnection,
+		sharedVariables: []string{},
+	}
+	dc.moduleConnections = append(dc.moduleConnections, secondUnusedConn)
+	got = dc.listUnusedModules()
+	c.Assert(got["usingModule"], HasLen, 2)
+
+}
+
+func (s *MySuite) TestAddKindToModules(c *C) {
+	/* Test addKindToModules() works when nothing to do */
+	dc := getBasicDeploymentConfigWithTestModule()
+	expected := dc.Config.DeploymentGroups[0].getModuleByID("TestModule1").Kind
+	dc.addKindToModules()
+	got := dc.Config.DeploymentGroups[0].getModuleByID("TestModule1").Kind
+	c.Assert(got, Equals, expected)
+
+	/* Test addKindToModules() works when kind is absent*/
+	dc = getDeploymentConfigWithTestModuleEmptyKind()
+	expected = "terraform"
+	dc.addKindToModules()
+	got = dc.Config.DeploymentGroups[0].getModuleByID("TestModule1").Kind
+	c.Assert(got, Equals, expected)
+
+	/* Test addKindToModules() works when kind is empty*/
+	dc = getDeploymentConfigWithTestModuleEmptyKind()
+	expected = "terraform"
+	dc.addKindToModules()
+	got = dc.Config.DeploymentGroups[0].getModuleByID("TestModule2").Kind
+	c.Assert(got, Equals, expected)
+
+	/* Test addKindToModules() does nothing to packer types*/
+	moduleID := "packerModule"
+	expected = "packer"
+	dc = getDeploymentConfigWithTestModuleEmptyKind()
+	dc.Config.DeploymentGroups[0].Modules = append(dc.Config.DeploymentGroups[0].Modules, Module{ID: moduleID, Kind: expected})
+	dc.addKindToModules()
+	got = dc.Config.DeploymentGroups[0].getModuleByID(moduleID).Kind
+	c.Assert(got, Equals, expected)
+
+	/* Test addKindToModules() does nothing to invalid types*/
+	moduleID = "funnyModule"
+	expected = "funnyType"
+	dc = getDeploymentConfigWithTestModuleEmptyKind()
+	dc.Config.DeploymentGroups[0].Modules = append(dc.Config.DeploymentGroups[0].Modules, Module{ID: moduleID, Kind: expected})
+	dc.addKindToModules()
+	got = dc.Config.DeploymentGroups[0].getModuleByID(moduleID).Kind
+	c.Assert(got, Equals, expected)
 }
 
 func (s *MySuite) TestSetModulesInfo(c *C) {
@@ -318,7 +466,7 @@ func (s *MySuite) TestCheckModuleAndGroupNames(c *C) {
 
 func (s *MySuite) TestDeploymentName(c *C) {
 	dc := getDeploymentConfigForTest()
-	var e *DeploymentNameError
+	var e *InputValueError
 
 	// Is deployment_name a valid string?
 	deploymentName, err := dc.Config.DeploymentName()
@@ -333,7 +481,25 @@ func (s *MySuite) TestDeploymentName(c *C) {
 
 	// Is deployment_name not a string?
 	dc.Config.Vars["deployment_name"] = 100
-	_, err = dc.Config.DeploymentName()
+	deploymentName, err = dc.Config.DeploymentName()
+	c.Assert(deploymentName, Equals, "")
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Is deployment_names longer than 63 characters?
+	dc.Config.Vars["deployment_name"] = "deployment_name-deployment_name-deployment_name-deployment_name-0123"
+	deploymentName, err = dc.Config.DeploymentName()
+	c.Assert(deploymentName, Equals, "")
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Does deployment_name contain special characters other than dashes or underscores?
+	dc.Config.Vars["deployment_name"] = "deployment.name"
+	deploymentName, err = dc.Config.DeploymentName()
+	c.Assert(deploymentName, Equals, "")
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Does deployment_name contain capital letters?
+	dc.Config.Vars["deployment_name"] = "Deployment_name"
+	deploymentName, err = dc.Config.DeploymentName()
 	c.Assert(deploymentName, Equals, "")
 	c.Check(errors.As(err, &e), Equals, true)
 
@@ -341,6 +507,40 @@ func (s *MySuite) TestDeploymentName(c *C) {
 	delete(dc.Config.Vars, "deployment_name")
 	deploymentName, err = dc.Config.DeploymentName()
 	c.Assert(deploymentName, Equals, "")
+	c.Check(errors.As(err, &e), Equals, true)
+}
+
+func (s *MySuite) TestCheckBlueprintName(c *C) {
+	dc := getDeploymentConfigForTest()
+	var e *InputValueError
+
+	// Is blueprint_name a valid string?
+	err := dc.Config.checkBlueprintName()
+	c.Assert(err, IsNil)
+
+	// Is blueprint_name a valid string with an underscore and dash?
+	dc.Config.BlueprintName = "blue-print_name"
+	err = dc.Config.checkBlueprintName()
+	c.Check(err, IsNil)
+
+	// Is blueprint_name an empty string?
+	dc.Config.BlueprintName = ""
+	err = dc.Config.checkBlueprintName()
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Is blueprint_name longer than 63 characters?
+	dc.Config.BlueprintName = "blueprint-name-blueprint-name-blueprint-name-blueprint-name-0123"
+	err = dc.Config.checkBlueprintName()
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Does blueprint_name contain special characters other than dashes or underscores?
+	dc.Config.BlueprintName = "blueprint.name"
+	err = dc.Config.checkBlueprintName()
+	c.Check(errors.As(err, &e), Equals, true)
+
+	// Does blueprint_name contain capital letters?
+	dc.Config.BlueprintName = "Blueprint_name"
+	err = dc.Config.checkBlueprintName()
 	c.Check(errors.As(err, &e), Equals, true)
 }
 
@@ -414,12 +614,26 @@ func (s *MySuite) TestSetCLIVariables(c *C) {
 	cliRegion := "cli_region"
 	cliZone := "cli_zone"
 	cliKeyVal := "key=val"
+	cliKeyBool := "true"
+	cliKeyInt := "15"
+	cliKeyFloat := "15.43"
+	cliKeyArray := "[1, 2, 3]"
+	cliKeyMap := "{bar: baz, qux: 1}"
+	cliKeyArrayOfMaps := "[foo, {bar: baz, qux: 1}]"
+	cliKeyMapOfArrays := "{foo: [1, 2, 3], bar: [a, b, c]}"
 	cliVars := []string{
 		fmt.Sprintf("project_id=%s", cliProjectID),
 		fmt.Sprintf("deployment_name=%s", cliDeploymentName),
 		fmt.Sprintf("region=%s", cliRegion),
 		fmt.Sprintf("zone=%s", cliZone),
 		fmt.Sprintf("kv=%s", cliKeyVal),
+		fmt.Sprintf("keyBool=%s", cliKeyBool),
+		fmt.Sprintf("keyInt=%s", cliKeyInt),
+		fmt.Sprintf("keyFloat=%s", cliKeyFloat),
+		fmt.Sprintf("keyMap=%s", cliKeyMap),
+		fmt.Sprintf("keyArray=%s", cliKeyArray),
+		fmt.Sprintf("keyArrayOfMaps=%s", cliKeyArrayOfMaps),
+		fmt.Sprintf("keyMapOfArrays=%s", cliKeyMapOfArrays),
 	}
 	err := dc.SetCLIVariables(cliVars)
 
@@ -429,6 +643,38 @@ func (s *MySuite) TestSetCLIVariables(c *C) {
 	c.Assert(dc.Config.Vars["region"], Equals, cliRegion)
 	c.Assert(dc.Config.Vars["zone"], Equals, cliZone)
 	c.Assert(dc.Config.Vars["kv"], Equals, cliKeyVal)
+
+	// Bool in string is converted to bool
+	boolValue, _ := strconv.ParseBool(cliKeyBool)
+	c.Assert(dc.Config.Vars["keyBool"], Equals, boolValue)
+
+	// Int in string is converted to int
+	intValue, _ := strconv.Atoi(cliKeyInt)
+	c.Assert(dc.Config.Vars["keyInt"], Equals, intValue)
+
+	// Float in string is converted to float
+	floatValue, _ := strconv.ParseFloat(cliKeyFloat, 64)
+	c.Assert(dc.Config.Vars["keyFloat"], Equals, floatValue)
+
+	// Map in string is converted to map
+	mapValue := make(map[string]interface{})
+	mapValue["bar"] = "baz"
+	mapValue["qux"] = 1
+	c.Assert(dc.Config.Vars["keyMap"], DeepEquals, mapValue)
+
+	// Array in string is converted to array
+	arrayValue := []interface{}{1, 2, 3}
+	c.Assert(dc.Config.Vars["keyArray"], DeepEquals, arrayValue)
+
+	// Array of maps in string is converted to array
+	arrayOfMapsValue := []interface{}{"foo", mapValue}
+	c.Assert(dc.Config.Vars["keyArrayOfMaps"], DeepEquals, arrayOfMapsValue)
+
+	// Map of arrays in string is converted to array
+	mapOfArraysValue := make(map[string]interface{})
+	mapOfArraysValue["foo"] = []interface{}{1, 2, 3}
+	mapOfArraysValue["bar"] = []interface{}{"a", "b", "c"}
+	c.Assert(dc.Config.Vars["keyMapOfArrays"], DeepEquals, mapOfArraysValue)
 
 	// Failure: Variable without '='
 	dc = getBasicDeploymentConfigWithTestModule()
@@ -586,7 +832,7 @@ func (s *MySuite) TestConvertMapToCty(c *C) {
 	}
 	testcty, err = ConvertMapToCty(testmap)
 	c.Assert(err, NotNil)
-	ctyval, found = testcty[testkey]
+	_, found = testcty[testkey]
 	c.Assert(found, Equals, false)
 }
 
@@ -639,4 +885,27 @@ func (s *MySuite) TestResolveGlobalVariables(c *C) {
 	c.Assert(ctyMap[testkey1], Equals, cty.StringVal(testGlobalValString))
 	c.Assert(ctyMap[testkey2], Equals, cty.StringVal(testGlobalValBool))
 	c.Assert(ctyMap[testkey3], Equals, cty.StringVal(testPlainString))
+}
+
+func (s *MySuite) TestCheckMovedModules(c *C) {
+
+	dc := DeploymentConfig{
+		Config: Blueprint{
+			DeploymentGroups: []DeploymentGroup{
+				{Modules: []Module{
+					{Source: "some/module/that/has/not/moved"}}}}}}
+
+	// base case should not err
+	err := dc.checkMovedModules()
+	c.Assert(err, IsNil)
+
+	// embedded moved
+	dc.Config.DeploymentGroups[0].Modules[0].Source = "community/modules/scheduler/cloud-batch-job"
+	err = dc.checkMovedModules()
+	c.Assert(err, NotNil)
+
+	// local moved
+	dc.Config.DeploymentGroups[0].Modules[0].Source = "./community/modules/scheduler/cloud-batch-job"
+	err = dc.checkMovedModules()
+	c.Assert(err, NotNil)
 }

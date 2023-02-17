@@ -18,6 +18,7 @@ package main
 import (
 	"embed"
 	"hpc-toolkit/cmd"
+	"hpc-toolkit/pkg/modulereader"
 	"hpc-toolkit/pkg/sourcereader"
 	"os"
 )
@@ -25,8 +26,21 @@ import (
 //go:embed modules community/modules
 var moduleFS embed.FS
 
+// Git references when use Makefile
+var gitTagVersion string
+var gitBranch string
+var gitCommitInfo string
+var gitCommitHash string
+var gitInitialHash string
+
 func main() {
 	sourcereader.ModuleFS = moduleFS
+	modulereader.ModuleFS = moduleFS
+	cmd.GitTagVersion = gitTagVersion
+	cmd.GitBranch = gitBranch
+	cmd.GitCommitInfo = gitCommitInfo
+	cmd.GitCommitHash = gitCommitHash
+	cmd.GitInitialHash = gitInitialHash
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

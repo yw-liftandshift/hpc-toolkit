@@ -4,6 +4,9 @@ This module creates a [filestore](https://cloud.google.com/filestore)
 instance. Filestore is a high performance network file system that can be
 mounted to one or more compute VMs.
 
+For more information on this and other network storage options in the Cloud HPC
+Toolkit, see the extended [Network Storage documentation](../../../docs/network_storage.md).
+
 ### Filestore tiers
 
 At the time of writing, Filestore supports 4 [tiers of service][tiers] that are
@@ -46,9 +49,8 @@ The Filestore instance defined below will have the following attributes:
 - connected to the network defined in the `network1` module
 
 ```yaml
-- source: modules/file-system/filestore
-  kind: terraform
-  id: homefs
+- id: homefs
+  source: modules/file-system/filestore
   use: [network1]
   settings:
     local_mount: /home
@@ -65,15 +67,46 @@ The Filestore instance defined below will have the following attributes:
 - connected to the VPC network defined in the `network1` module
 
 ```yaml
-- source: modules/file-system/filestore
-  kind: terraform
-  id: highscale
+- id: highscale
+  source: modules/file-system/filestore
   use: [network1]
   settings:
     filestore_tier: HIGH_SCALE_SSD
     size_gb: 10240
     local_mount: /projects
 ```
+
+## Mounting
+
+To mount the Filestore instance you must first ensure that the NFS client has
+been installed and then call the proper `mount` command.
+
+Both of these steps are automatically handled with the use of the `use` command
+in a selection of HPC Toolkit modules. See the [compatibility matrix][matrix] in
+the network storage doc for a complete list of supported modules.
+See the [hpc-cluster-high-io](../../../examples/hpc-cluster-high-io.yaml) for
+an example of using this module with Slurm.
+
+If mounting is not automatically handled as described above, the `filestore`
+module outputs runners that can be used with the startup-script module to
+install the client and mount the file system. See the following example:
+
+```yaml
+  - id: filestore
+    source: modules/file-system/filestore
+    use: [network1]
+    settings: {local_mount: /scratch}
+
+  - id: mount-at-startup
+    source: modules/scripts/startup-script
+    settings:
+      runners:
+      - $(filestore.install_nfs_client_runner)
+      - $(filestore.mount_runner)
+
+```
+
+[matrix]: ../../../../docs/network_storage.md#compatibility-matrix
 
 ## License
 
@@ -97,14 +130,14 @@ limitations under the License.
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 0.14.0 |
-| <a name="requirement_google-beta"></a> [google-beta](#requirement\_google-beta) | >= 4.4 |
+| <a name="requirement_google"></a> [google](#requirement\_google) | ~> 4.19 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_google-beta"></a> [google-beta](#provider\_google-beta) | >= 4.4 |
+| <a name="provider_google"></a> [google](#provider\_google) | ~> 4.19 |
 | <a name="provider_random"></a> [random](#provider\_random) | ~> 3.0 |
 
 ## Modules
@@ -115,7 +148,7 @@ No modules.
 
 | Name | Type |
 |------|------|
-| [google-beta_google_filestore_instance.filestore_instance](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/google_filestore_instance) | resource |
+| [google_filestore_instance.filestore_instance](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/filestore_instance) | resource |
 | [random_id.resource_name_suffix](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) | resource |
 
 ## Inputs
@@ -141,6 +174,6 @@ No modules.
 |------|-------------|
 | <a name="output_install_nfs_client"></a> [install\_nfs\_client](#output\_install\_nfs\_client) | Script for installing NFS client |
 | <a name="output_install_nfs_client_runner"></a> [install\_nfs\_client\_runner](#output\_install\_nfs\_client\_runner) | Runner to install NFS client using the startup-script module |
-| <a name="output_mount_runner"></a> [mount\_runner](#output\_mount\_runner) | Runner to mount the file-system using the startup-script module.<br>This runner requires ansible to be installed. This can be achieved using the<br>install\_ansible.sh script as a prior runner in the startup-script module:<br>runners:<br>- type: shell<br>  source: modules/startup-script/examples/install\_ansible.sh<br>  destination: install\_ansible.sh<br>- $(your-fs-id.mount\_runner)<br>... |
+| <a name="output_mount_runner"></a> [mount\_runner](#output\_mount\_runner) | Runner to mount the file-system using an ansible playbook. The startup-script<br>module will automatically handle installation of ansible.<br>- id: example-startup-script<br>  source: modules/scripts/startup-script<br>  settings:<br>    runners:<br>    - $(your-fs-id.mount\_runner)<br>... |
 | <a name="output_network_storage"></a> [network\_storage](#output\_network\_storage) | Describes a filestore instance. |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->

@@ -25,13 +25,11 @@ vars:
 deployment_groups:
 - group: primary
   modules:
-  - source: modules/network/pre-existing-vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/pre-existing-vpc
 
-  - source: ./community/modules/scripts/spack-install
-    kind: terraform
-    id: spack
+  - id: spack
+    source: ./community/modules/scripts/spack-install
     settings:
       install_dir: /apps/spack
       spack_url: https://github.com/spack/spack
@@ -79,15 +77,14 @@ deployment_groups:
         path: '/tmp/spack_key.gpg'
       caches_to_populate:
       - type: 'mirror'
-        path: ##  Add GCS bucket to populate here ##
+        path:   ##  Add GCS bucket to populate here ##
 
-  - source: modules/scripts/startup-script
-    kind: terraform
-    id: spack-startup
+  - id: spack-startup
+    source: modules/scripts/startup-script
     settings:
       runners:
       - type: data
-        source: ##  Add path to GPG key here ##
+        source: /local/path/to/spack/key.gpg
         destination: /tmp/spack_key.gpg
       - type: shell
         content: |
@@ -95,9 +92,6 @@ deployment_groups:
           mkdir /apps
           chmod a+rwx /apps
         destination: apps_create.sh
-      - type: shell
-        source: modules/startup-script/examples/install_ansible.sh
-        destination: install_ansible.sh
       - type: ansible-local
         source: modules/spack-install/scripts/install_spack_deps.yml
         destination: install_spack_deps.yml
@@ -108,9 +102,8 @@ deployment_groups:
         destination: shutdown.sh
         content: shutdown -h
 
-  - source: modules/compute/vm-instance
-    kind: terraform
-    id: spack-build
+  - id: spack-build
+    source: modules/compute/vm-instance
     use:
     - network1
     - spack-startup

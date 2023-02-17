@@ -22,36 +22,33 @@ vars:
   region: us-central1
   zone: us-central1-c
 
+# Documentation for each of the modules used below can be found at
+# https://github.com/GoogleCloudPlatform/hpc-toolkit/blob/main/modules/README.md
+
 deployment_groups:
 - group: primary
   modules:
-  - source: modules/network/pre-existing-vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/pre-existing-vpc
 
   ## Filesystems
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: appsfs
+  - id: appsfs
+    source: modules/file-system/filestore
     use: [network1]
     settings:
       local_mount: /sw
 
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: homefs
+  - id: homefs
+    source: modules/file-system/filestore
     use: [network1]
     settings:
       local_mount: /home
 
   ## Install Scripts
-  - source: community/modules/scripts/spack-install
-    kind: terraform
-    id: spack
+  - id: spack
+    source: community/modules/scripts/spack-install
     settings:
       install_dir: /sw/spack
-      spack_url: https://github.com/spack/spack
-      spack_ref: v0.18.0
       log_file: /var/log/spack.log
       configs:
       - type: single-config
@@ -80,20 +77,15 @@ deployment_groups:
       # - mirror_name: gcs_cache
       #   mirror_url: gs://bucket-name/...
 
-  - source: modules/scripts/startup-script
-    kind: terraform
-    id: spack-startup
+  - id: spack-startup
+    source: modules/scripts/startup-script
     settings:
       runners:
-      - type: shell
-        source: modules/startup-script/examples/install_ansible.sh
-        destination: install_ansible.sh
       - $(spack.install_spack_deps_runner)
       - $(spack.install_spack_runner)
 
-  - source: community/modules/compute/SchedMD-slurm-on-gcp-partition
-    kind: terraform
-    id: compute_partition
+  - id: compute_partition
+    source: community/modules/compute/SchedMD-slurm-on-gcp-partition
     use:
     - network1
     - homefs
@@ -102,9 +94,8 @@ deployment_groups:
       partition_name: compute
       max_node_count: 20
 
-  - source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-    kind: terraform
-    id: slurm_controller
+  - id: slurm_controller
+    source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
     use:
     - network1
     - homefs
@@ -113,9 +104,8 @@ deployment_groups:
     settings:
       login_node_count: 1
 
-  - source: community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
-    kind: terraform
-    id: slurm_login
+  - id: slurm_login
+    source: community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
     use:
     - network1
     - homefs

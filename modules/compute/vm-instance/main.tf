@@ -1,5 +1,5 @@
 /**
- * Copyright 2022 Google LLC
+ * Copyright 2023 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
 */
 
 locals {
-  startup_script = var.startup_script != null ? (
-  { startup-script = var.startup_script }) : {}
+  native_fstype = []
+  startup_script = local.startup_from_network_storage != null ? (
+  { startup-script = local.startup_from_network_storage }) : {}
   network_storage = var.network_storage != null ? (
   { network_storage = jsonencode(var.network_storage) }) : {}
 
@@ -30,14 +31,18 @@ locals {
 
   # compact_placement : true when placement policy is provided and collocation set; false if unset
   compact_placement = try(var.placement_policy.collocation, null) != null
+
+  gpu_attached = contains(["a2"], local.machine_family) || length(local.guest_accelerator) > 0
+
   # both of these must be false if either compact placement or preemptible/spot instances are used
-  automatic_restart                  = local.compact_placement || var.spot ? false : null
-  on_host_maintenance_from_placement = local.compact_placement || var.spot ? "TERMINATE" : "MIGRATE"
+  # automatic restart is tolerant of GPUs while on host maintenance is not
+  automatic_restart           = local.compact_placement || var.spot ? false : null
+  on_host_maintenance_default = local.compact_placement || var.spot || local.gpu_attached ? "TERMINATE" : "MIGRATE"
 
   on_host_maintenance = (
     var.on_host_maintenance != null
     ? var.on_host_maintenance
-    : local.on_host_maintenance_from_placement
+    : local.on_host_maintenance_default
   )
 
   oslogin_api_values = {
@@ -57,6 +62,27 @@ locals {
   smt_capable          = local.smt_capable_family && local.smt_capable_vcpu && local.machine_not_shared_core
   set_threads_per_core = var.threads_per_core != null && (var.threads_per_core == 0 && local.smt_capable || try(var.threads_per_core >= 1, false))
   threads_per_core     = var.threads_per_core == 2 ? 2 : 1
+
+  # Network Interfaces
+  # Support for `use` input and base network paramters like `network_self_link` and `subnetwork_self_link`
+  empty_access_config = {
+    nat_ip                 = null,
+    public_ptr_domain_name = null,
+    network_tier           = null
+  }
+  default_network_interface = {
+    network            = var.network_self_link
+    subnetwork         = var.subnetwork_self_link
+    subnetwork_project = var.project_id
+    network_ip         = null
+    nic_type           = local.enable_gvnic ? "GVNIC" : null
+    stack_type         = null
+    queue_count        = null
+    access_config      = var.disable_public_ips ? [] : [local.empty_access_config]
+    ipv6_access_config = []
+    alias_ip_range     = []
+  }
+  network_interfaces = coalescelist(var.network_interfaces, [local.default_network_interface])
 }
 
 data "google_compute_image" "compute_image" {
@@ -74,6 +100,7 @@ resource "google_compute_disk" "boot_disk" {
   type   = var.disk_type
   size   = var.disk_size_gb
   labels = var.labels
+  zone   = var.zone
 }
 
 resource "google_compute_resource_policy" "placement_policy" {
@@ -108,18 +135,50 @@ resource "google_compute_instance" "compute_vm" {
   boot_disk {
     source      = google_compute_disk.boot_disk[count.index].self_link
     device_name = google_compute_disk.boot_disk[count.index].name
-    auto_delete = true
+    auto_delete = var.auto_delete_boot_disk
   }
 
-  network_interface {
-    dynamic "access_config" {
-      for_each = var.disable_public_ips == true ? [] : [1]
-      content {}
+  dynamic "scratch_disk" {
+    for_each = range(var.local_ssd_count)
+    content {
+      interface = var.local_ssd_interface
     }
+  }
 
-    network    = var.network_self_link
-    subnetwork = var.subnetwork_self_link
-    nic_type   = local.enable_gvnic ? "GVNIC" : null
+  dynamic "network_interface" {
+    for_each = local.network_interfaces
+
+    content {
+      network            = network_interface.value.network
+      subnetwork         = network_interface.value.subnetwork
+      subnetwork_project = network_interface.value.subnetwork_project
+      network_ip         = network_interface.value.network_ip
+      nic_type           = network_interface.value.nic_type
+      stack_type         = network_interface.value.stack_type
+      queue_count        = network_interface.value.queue_count
+      dynamic "access_config" {
+        for_each = network_interface.value.access_config
+        content {
+          nat_ip                 = access_config.value.nat_ip
+          public_ptr_domain_name = access_config.value.public_ptr_domain_name
+          network_tier           = access_config.value.network_tier
+        }
+      }
+      dynamic "ipv6_access_config" {
+        for_each = network_interface.value.ipv6_access_config
+        content {
+          public_ptr_domain_name = ipv6_access_config.value.public_ptr_domain_name
+          network_tier           = ipv6_access_config.value.network_tier
+        }
+      }
+      dynamic "alias_ip_range" {
+        for_each = network_interface.value.alias_ip_range
+        content {
+          ip_cidr_range         = alias_ip_range.value.ip_cidr_range
+          subnetwork_range_name = alias_ip_range.value.subnetwork_range_name
+        }
+      }
+    }
   }
 
   network_performance_config {
@@ -134,7 +193,7 @@ resource "google_compute_instance" "compute_vm" {
     }
   }
 
-  guest_accelerator = var.guest_accelerator
+  guest_accelerator = local.guest_accelerator
   scheduling {
     on_host_maintenance = local.on_host_maintenance
     automatic_restart   = local.automatic_restart

@@ -15,12 +15,30 @@
  */
 
 locals {
+  ansible_installer = {
+    type        = "shell"
+    source      = "${path.module}/examples/install_ansible.sh"
+    destination = "install_ansible_automatic.sh"
+  }
+
+  ansible_local_runners     = [for r in var.runners : r if r.type == "ansible-local"]
+  prepend_ansible_installer = length(local.ansible_local_runners) > 0 && var.prepend_ansible_installer
+  runners                   = local.prepend_ansible_installer ? concat([local.ansible_installer], var.runners) : var.runners
+
+  bucket_regex               = "^gs://([^/]*)/*(.*)"
+  gcs_bucket_path_trimmed    = var.gcs_bucket_path == null ? null : trimsuffix(var.gcs_bucket_path, "/")
+  storage_folder_path        = local.gcs_bucket_path_trimmed == null ? null : regex(local.bucket_regex, local.gcs_bucket_path_trimmed)[1]
+  storage_folder_path_prefix = local.storage_folder_path == null || local.storage_folder_path == "" ? "" : "${local.storage_folder_path}/"
+
+  user_provided_bucket_name = try(regex(local.bucket_regex, local.gcs_bucket_path_trimmed)[0], null)
+  storage_bucket_name       = coalesce(one(google_storage_bucket.configs_bucket[*].name), local.user_provided_bucket_name)
+
   load_runners = templatefile(
     "${path.module}/templates/startup-script-custom.tpl",
     {
-      bucket = google_storage_bucket.configs_bucket.name,
+      bucket = local.storage_bucket_name,
       runners = [
-        for runner in var.runners : {
+        for runner in local.runners : {
           object      = google_storage_bucket_object.scripts[basename(runner["destination"])].output_name
           type        = runner["type"]
           destination = runner["destination"]
@@ -45,7 +63,7 @@ locals {
   # Final content output to the user
   stdlib = join("", local.stdlib_list)
 
-  runners_map = { for runner in var.runners :
+  runners_map = { for runner in local.runners :
     basename(runner["destination"])
     => {
       content = lookup(runner, "content", null)
@@ -59,6 +77,7 @@ resource "random_id" "resource_name_suffix" {
 }
 
 resource "google_storage_bucket" "configs_bucket" {
+  count                       = var.gcs_bucket_path == null ? 1 : 0
   project                     = var.project_id
   name                        = "${var.deployment_name}-startup-scripts-${random_id.resource_name_suffix.hex}"
   uniform_bucket_level_access = true
@@ -70,10 +89,10 @@ resource "google_storage_bucket" "configs_bucket" {
 resource "google_storage_bucket_object" "scripts" {
   # this writes all scripts exactly once into GCS
   for_each = local.runners_map
-  name     = each.key
+  name     = "${local.storage_folder_path_prefix}${each.key}"
   content  = each.value["content"]
   source   = each.value["source"]
-  bucket   = google_storage_bucket.configs_bucket.name
+  bucket   = local.storage_bucket_name
   timeouts {
     create = "10m"
     update = "10m"

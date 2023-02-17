@@ -32,18 +32,16 @@ terraform_backend_defaults:
 deployment_groups:
 - group: onboarding
   modules:
-  - source: ./community/modules/project/new-project
-    kind: terraform
-    id: project
+  - id: project
+    source: ./community/modules/project/new-project
     settings:
       project_id: $(vars.project_id)
       folder_id: 334688113020  # random number
       billing_account: "111110-M2N704-854685"  # random billing number
       org_id: 123456789  # random org id
 
-  - source: ./community/modules/project/service-enablement
-    kind: terraform
-    id: enable-apis
+  - id: enable-apis
+    source: ./community/modules/project/service-enablement
     use: [project]
     settings:
       gcp_service_list:
@@ -55,20 +53,17 @@ deployment_groups:
   # Source is an embedded module, denoted by "modules/*" without ./, ../, /
   # as a prefix. To refer to a local module, prefix with ./, ../ or /
   # Example - ./modules/network/vpc
-  - source: modules/network/vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/vpc
 
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: homefs
+  - id: homefs
+    source: modules/file-system/filestore
     use: [network1]
     settings:
       local_mount: /home
 
-  - source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
-    kind: terraform
-    id: compute_partition
+  - id: compute_partition
+    source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
     use:
     - network1
     - homefs
@@ -78,9 +73,8 @@ deployment_groups:
       enable_placement: false
       max_node_count: 20
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-    kind: terraform
-    id: slurm_controller
+  - id: slurm_controller
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
     use:
     - network1
     - homefs
@@ -88,9 +82,8 @@ deployment_groups:
     settings:
       login_node_count: 1
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
-    kind: terraform
-    id: slurm_login
+  - id: slurm_login
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
     use:
     - network1
     - homefs

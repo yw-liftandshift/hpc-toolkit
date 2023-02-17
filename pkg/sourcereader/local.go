@@ -16,22 +16,11 @@ package sourcereader
 
 import (
 	"fmt"
-	"hpc-toolkit/pkg/modulereader"
 	"os"
 )
 
 // LocalSourceReader reads modules from a local directory
 type LocalSourceReader struct{}
-
-// GetModuleInfo gets modulereader.ModuleInfo for the given kind from the local source
-func (r LocalSourceReader) GetModuleInfo(modPath string, kind string) (modulereader.ModuleInfo, error) {
-	if !IsLocalPath(modPath) {
-		return modulereader.ModuleInfo{}, fmt.Errorf("Source is not valid: %s", modPath)
-	}
-
-	reader := modulereader.Factory(kind)
-	return reader.GetInfo(modPath)
-}
 
 // GetModule copies the local source to a provided destination (the deployment directory)
 func (r LocalSourceReader) GetModule(modPath string, copyPath string) error {

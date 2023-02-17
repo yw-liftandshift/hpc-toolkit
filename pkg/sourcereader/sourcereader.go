@@ -16,7 +16,6 @@ package sourcereader
 
 import (
 	"hpc-toolkit/pkg/deploymentio"
-	"hpc-toolkit/pkg/modulereader"
 	"log"
 	"strings"
 )
@@ -29,11 +28,6 @@ const (
 
 // SourceReader interface for reading modules from a source
 type SourceReader interface {
-	// GetModuleInfo would leverage modulereader.GetInfo for the given kind.
-	// GetModuleInfo would operate over the source without creating a local copy.
-	// This would be very dependent on the kind of module.
-	GetModuleInfo(modPath string, kind string) (modulereader.ModuleInfo, error)
-
 	// GetModule copies the source to a provided local destination (the deployment directory).
 	GetModule(modPath string, copyPath string) error
 }
@@ -41,7 +35,7 @@ type SourceReader interface {
 var readers = map[int]SourceReader{
 	local:    LocalSourceReader{},
 	embedded: EmbeddedSourceReader{},
-	github:   GitHubSourceReader{},
+	github:   GitSourceReader{},
 }
 
 // IsLocalPath checks if a source path is a local FS path
@@ -56,9 +50,11 @@ func IsEmbeddedPath(source string) bool {
 	return strings.HasPrefix(source, "modules/") || strings.HasPrefix(source, "community/modules/")
 }
 
-// IsGitHubPath checks if a source path points to GitHub
-func IsGitHubPath(source string) bool {
-	return strings.HasPrefix(source, "github.com") || strings.HasPrefix(source, "git@github.com")
+// IsGitPath checks if a source path points to GitHub or has the git:: prefix
+func IsGitPath(source string) bool {
+	return strings.HasPrefix(source, "github.com") ||
+		strings.HasPrefix(source, "git@github.com") ||
+		strings.HasPrefix(source, "git::")
 }
 
 // Factory returns a SourceReader of module path
@@ -73,7 +69,7 @@ func Factory(modPath string) SourceReader {
 		return readers[local]
 	case IsEmbeddedPath(modPath):
 		return readers[embedded]
-	case IsGitHubPath(modPath):
+	case IsGitPath(modPath):
 		return readers[github]
 	default:
 		log.Fatalf(

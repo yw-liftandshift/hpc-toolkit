@@ -1,5 +1,5 @@
 /**
- * Copyright 2022 Google LLC
+ * Copyright 2023 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 # Most variables have been sourced and modified from the SchedMD/slurm-gcp
-# github repository: https://github.com/SchedMD/slurm-gcp/tree/v5.0.3
+# github repository: https://github.com/SchedMD/slurm-gcp/tree/v5.1.0
 
 variable "access_config" {
   description = "Access configurations, i.e. IPs via which the VM instance can be accessed via the Internet."
@@ -49,12 +49,14 @@ variable "can_ip_forward" {
 variable "cloud_parameters" {
   description = "cloud.conf options."
   type = object({
+    no_comma_params = bool
     resume_rate     = number
     resume_timeout  = number
     suspend_rate    = number
     suspend_timeout = number
   })
   default = {
+    no_comma_params = false
     resume_rate     = 0
     resume_timeout  = 300
     suspend_rate    = 0
@@ -86,16 +88,63 @@ variable "compute_startup_script" {
   default     = ""
 }
 
+variable "compute_startup_scripts_timeout" {
+  description = <<-EOD
+    The timeout (seconds) applied to the compute_startup_script. If
+    any script exceeds this timeout, then the instance setup process is considered
+    failed and handled accordingly.
+
+    NOTE: When set to 0, the timeout is considered infinite and thus disabled.
+    EOD
+  type        = number
+  default     = 300
+}
+
 variable "controller_startup_script" {
   description = "Startup script used by the controller VM."
   type        = string
   default     = ""
 }
 
+variable "controller_startup_scripts_timeout" {
+  description = <<-EOD
+    The timeout (seconds) applied to the controller_startup_script. If
+    any script exceeds this timeout, then the instance setup process is considered
+    failed and handled accordingly.
+
+    NOTE: When set to 0, the timeout is considered infinite and thus disabled.
+    EOD
+  type        = number
+  default     = 300
+}
+
+variable "login_startup_scripts_timeout" {
+  description = <<-EOD
+    The timeout (seconds) applied to the login startup script. If
+    any script exceeds this timeout, then the instance setup process is considered
+    failed and handled accordingly.
+
+    NOTE: When set to 0, the timeout is considered infinite and thus disabled.
+    EOD
+  type        = number
+  default     = 300
+}
+
 variable "cgroup_conf_tpl" {
   type        = string
   description = "Slurm cgroup.conf template file path."
   default     = null
+}
+
+variable "deployment_name" {
+  description = "Name of the deployment."
+  type        = string
+}
+
+variable "disable_controller_public_ips" {
+  description = "If set to false. The controller will have a random public IP assigned to it. Ignored if access_config is set."
+  type        = bool
+  default     = true
 }
 
 variable "disable_default_mounts" {
@@ -116,7 +165,7 @@ variable "disable_default_mounts" {
 variable "disable_smt" {
   type        = bool
   description = "Disables Simultaneous Multi-Threading (SMT) on instance."
-  default     = false
+  default     = true
 }
 
 variable "disk_type" {
@@ -140,6 +189,12 @@ variable "disk_auto_delete" {
   type        = bool
   description = "Whether or not the boot disk should be auto-deleted."
   default     = true
+}
+
+variable "disk_labels" {
+  description = "Labels specific to the boot disk. These will be merged with var.labels."
+  type        = map(string)
+  default     = {}
 }
 
 variable "enable_devel" {
@@ -172,6 +227,19 @@ variable "enable_cleanup_subscriptions" {
     https://github.com/SchedMD/slurm-gcp/blob/3979e81fc5e4f021b5533a23baa474490f4f3614/scripts/requirements.txt
 
     *WARNING*: Toggling this may temporarily impact var.enable_reconfigure behavior.
+    EOD
+  type        = bool
+  default     = false
+}
+
+variable "enable_reconfigure" {
+  description = <<-EOD
+    Enables automatic Slurm reconfiguration when Slurm configuration changes (e.g.
+    slurm.conf.tpl, partition details). Compute instances and resource policies
+    (e.g. placement groups) will be destroyed to align with new configuration.
+    NOTE: Requires Python and Google Pub/Sub API.
+    *WARNING*: Toggling this will impact the running workload. Deployed compute nodes
+    will be destroyed and their jobs will be requeued.
     EOD
   type        = bool
   default     = false
@@ -222,13 +290,29 @@ variable "gpu" {
     type  = string
     count = number
   })
-  description = <<EOD
-GPU information. Type and count of GPU to attach to the instance template. See
-https://cloud.google.com/compute/docs/gpus more details.
-  type : the GPU type
-  count : number of GPUs
-EOD
+  description = <<-EOD
+    GPU information. Type and count of GPU to attach to the instance template. See
+    https://cloud.google.com/compute/docs/gpus more details.
+    - type : the GPU type, e.g. nvidia-tesla-t4, nvidia-a100-80gb, nvidia-tesla-a100, etc
+    - count : number of GPUs
+
+    If both 'var.gpu' and 'var.guest_accelerator' are set, 'var.gpu' will be used.
+    EOD
   default     = null
+}
+
+variable "guest_accelerator" {
+  description = <<-EOD
+    Alternative method of providing 'var.gpu' with a consistent naming scheme to
+    other HPC Toolkit modules.
+
+    If both 'var.gpu' and 'var.guest_accelerator' are set, 'var.gpu' will be used.
+    EOD
+  type = list(object({
+    type  = string,
+    count = number
+  }))
+  default = null
 }
 
 variable "labels" {
@@ -307,6 +391,10 @@ variable "partition" {
       partition_conf = map(string)
       partition_name = string
       partition_nodes = map(object({
+        access_config = list(object({
+          network_tier = string
+        }))
+        bandwidth_tier         = string
         node_count_dynamic_max = number
         node_count_static      = number
         enable_spot_vm         = bool
@@ -317,12 +405,20 @@ variable "partition" {
           termination_action = string
         })
       }))
-      subnetwork        = string
-      zone_policy_allow = list(string)
-      zone_policy_deny  = list(string)
+      partition_startup_scripts_timeout = number
+      subnetwork                        = string
+      zone_policy_allow                 = list(string)
+      zone_policy_deny                  = list(string)
     })
   }))
   default = []
+
+  validation {
+    condition = alltrue([
+      for x in var.partition[*].partition : can(regex("(^[a-z][a-z0-9]*$)", x.partition_name))
+    ])
+    error_message = "Item 'partition_name' must be alphanumeric and begin with a letter. regex: '(^[a-z][a-z0-9]*$)'."
+  }
 }
 
 variable "preemptible" {
@@ -360,10 +456,11 @@ variable "service_account" {
     email  = string
     scopes = set(string)
   })
-  description = <<EOD
-Service account to attach to the instances. See
-'main.tf:local.service_account' for the default.
-EOD
+  description = <<-EOD
+    Service account to attach to the controller instance. If not set, the
+    default compute service account for the given project will be used with the
+    "https://www.googleapis.com/auth/cloud-platform" scope.
+    EOD
   default     = null
 }
 
@@ -394,12 +491,8 @@ EOD
 
 variable "slurm_cluster_name" {
   type        = string
-  description = "Cluster name, used for resource naming and slurm accounting."
-
-  validation {
-    condition     = can(regex("(^[a-z][a-z0-9]*$)", var.slurm_cluster_name))
-    error_message = "Variable 'slurm_cluster_name' must be composed of only alphanumeric values and begin with a leter. regex: '(^[a-z][a-z0-9]*$)'."
-  }
+  description = "Cluster name, used for resource naming and slurm accounting. If not provided it will default to the first 8 characters of the deployment name (removing any invalid characters)."
+  default     = null
 }
 
 variable "slurmdbd_conf_tpl" {
@@ -414,37 +507,68 @@ variable "slurm_conf_tpl" {
   default     = null
 }
 
+
+variable "instance_template" {
+  description = <<-EOD
+    Self link to a custom instance template. If set, other VM definition
+    variables such as machine_type and instance_image will be ignored in favor
+    of the provided instance template.
+
+    For more information on creating custom images for the instance template
+    that comply with Slurm on GCP see the "Slurm on GCP Custom Images" section
+    in docs/vm-images.md.
+    EOD
+  type        = string
+  default     = null
+}
+
+variable "instance_image" {
+  description = <<-EOD
+    Defines the image that will be used in the Slurm controller VM instance. This
+    value is overridden if any of `source_image`, `source_image_family` or
+    `source_image_project` are set.
+
+    Expected Fields:
+    name: The name of the image. Mutually exclusive with family.
+    family: The image family to use. Mutually exclusive with name.
+    project: The project where the image is hosted.
+
+    For more information on creating custom images that comply with Slurm on GCP
+    see the "Slurm on GCP Custom Images" section in docs/vm-images.md.
+    EOD
+  type        = map(string)
+  default = {
+    family  = "schedmd-v5-slurm-22-05-6-hpc-centos-7"
+    project = "projects/schedmd-slurm-public/global/images/family"
+  }
+
+  validation {
+    condition = length(var.instance_image) == 0 || (
+    can(var.instance_image["family"]) || can(var.instance_image["name"])) == can(var.instance_image["project"])
+    error_message = "The \"project\" is required if \"family\" or \"name\" are provided in var.instance_image."
+  }
+  validation {
+    condition     = length(var.instance_image) == 0 || can(var.instance_image["family"]) != can(var.instance_image["name"])
+    error_message = "Exactly one of \"family\" and \"name\" must be provided in var.instance_image."
+  }
+}
+
 variable "source_image_project" {
   type        = string
-  description = <<-EOD
-    Project path where the source image comes from. If not provided, this value
-    will default to the project hosting the slurm-gcp public images. More
-    information can be found in the slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image.
-    EOD
-  default     = null
+  description = "The hosting the custom VM image. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "source_image_family" {
   type        = string
-  description = <<-EOD
-    Source image family. If not provided, the default image family name for the
-    hpc-centos-7 version of the slurm-gcp public images will be used. More
-    information can be found in the slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image
-    EOD
-  default     = null
+  description = "The custom VM image family. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "source_image" {
   type        = string
-  description = <<-EOD
-    Source disk image. By default, the image used will be the hpc-centos7
-    version of the slurm-gcp public images. More information can be found in the
-    slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image
-    EOD
-  default     = null
+  description = "The custom VM image. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "static_ips" {

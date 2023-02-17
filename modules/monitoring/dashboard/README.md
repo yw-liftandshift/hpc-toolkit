@@ -10,9 +10,8 @@ needed.
 ## Example
 
 ```yaml
-- source: modules/monitoring/dashboard
-  kind: terraform
-  id: hpc_dash
+- id: hpc_dash
+  source: modules/monitoring/dashboard
   settings:
     widgets:
     - |

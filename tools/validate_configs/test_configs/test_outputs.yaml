@@ -25,15 +25,13 @@ vars:
 deployment_groups:
 - group: primary
   modules:
-  - source: modules/compute/vm-instance
-    kind: terraform
-    id: instance
+  - id: instance
+    source: modules/compute/vm-instance
     outputs:
     - name
 
-  - source: community/modules/database/slurm-cloudsql-federation
-    kind: terraform
-    id: sql
+  - id: sql
+    source: community/modules/database/slurm-cloudsql-federation
     outputs:
     - cloudsql
     settings:
@@ -42,24 +40,21 @@ deployment_groups:
       nat_ips:
       - ip
 
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: filestore
+  - id: filestore
+    source: modules/file-system/filestore
     use: [vpc]
     outputs:
     - network_storage
     - install_nfs_client
 
-  - source: ./community/modules/file-system/nfs-server
-    kind: terraform
-    id: nfs
+  - id: nfs
+    source: ./community/modules/file-system/nfs-server
     outputs:
     - network_storage
     - install_nfs_client
 
-  - source: modules/file-system/pre-existing-network-storage
-    kind: terraform
-    id: pre-existing-storage
+  - id: pre-existing-storage
+    source: modules/file-system/pre-existing-network-storage
     outputs:
     - network_storage
     settings:
@@ -68,9 +63,8 @@ deployment_groups:
       local_mount: /home
       fs_type: nfs
 
-  - source: modules/network/pre-existing-vpc
-    kind: terraform
-    id: pre-existing-vpc
+  - id: pre-existing-vpc
+    source: modules/network/pre-existing-vpc
     outputs:
     - network_name
     - network_self_link
@@ -79,9 +73,8 @@ deployment_groups:
     - subnetwork_self_link
     - subnetwork_address
 
-  - source: modules/network/vpc
-    kind: terraform
-    id: vpc
+  - id: vpc
+    source: modules/network/vpc
     outputs:
     - network_name
     - network_self_link
@@ -91,9 +84,8 @@ deployment_groups:
     - subnetwork_address
     - nat_ips
 
-  - source: community/modules/project/new-project
-    kind: terraform
-    id: new-project
+  - id: new-project
+    source: community/modules/project/new-project
     outputs:
     - project_name
     - project_id
@@ -117,9 +109,8 @@ deployment_groups:
       billing_account: "111110-M2N704-854685"  # random billing number
       org_id: 123456789  # random org id
 
-  - source: community/modules/project/service-account
-    kind: terraform
-    id: sa
+  - id: sa
+    source: community/modules/project/service-account
     outputs:
     - email
     - emails
@@ -138,31 +129,27 @@ deployment_groups:
       project_roles:
       - "compute.instanceAdmin.v1"
 
-  - source: community/modules/scripts/spack-install
-    kind: terraform
-    id: spack
+  - id: spack
+    source: community/modules/scripts/spack-install
     outputs:
     - startup_script
     - controller_startup_script
 
-  - source: modules/scripts/startup-script
-    kind: terraform
-    id: startup
+  - id: startup
+    source: modules/scripts/startup-script
     outputs:
     - startup_script
 
-  - source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
-    kind: terraform
-    id: partition
+  - id: partition
+    source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
     use: [vpc]
     outputs:
     - partition
     settings:
       partition_name: compute
 
-  - source: ./community/modules/file-system/DDN-EXAScaler
-    kind: terraform
-    id: lustre
+  - id: lustre
+    source: ./community/modules/file-system/DDN-EXAScaler
     outputs:
     - private_addresses
     - ssh_console
@@ -170,9 +157,8 @@ deployment_groups:
     - http_console
     - network_storage
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-    kind: terraform
-    id: controller
+  - id: controller
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
     use:
     - partition
     - vpc

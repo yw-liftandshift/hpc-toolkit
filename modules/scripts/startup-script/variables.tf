@@ -30,6 +30,12 @@ variable "region" {
 }
 
 
+variable "gcs_bucket_path" {
+  description = "The GCS path for storage bucket and the object."
+  type        = string
+  default     = null
+}
+
 variable "debug_file" {
   description = "Path to an optional local to be written with 'startup_script'."
   type        = string
@@ -64,18 +70,38 @@ EOT
     error_message = "All runners must declare a destination name (even without a path)."
   }
   validation {
+    condition     = length(distinct([for r in var.runners : r["destination"]])) == length(var.runners)
+    error_message = "All startup-script runners must have a unique destination."
+  }
+  validation {
     condition = alltrue([
       for r in var.runners : r["type"] == "ansible-local" || r["type"] == "shell" || r["type"] == "data"
     ])
     error_message = "The 'type' must be 'ansible-local', 'shell' or 'data'."
   }
+  # this validation tests that exactly 1 or other of source/content have been
+  # set to anything (including null)
   validation {
     condition = alltrue([
       for r in var.runners :
-      (contains(keys(r), "content") && !contains(keys(r), "source")) ||
-      (!contains(keys(r), "content") && contains(keys(r), "source"))
+      can(r["content"]) != can(r["source"])
     ])
-    error_message = "A runner must specify one of 'content' or 'source file', but not both."
+    error_message = "A runner must specify either 'content' or 'source', but never both."
+  }
+  # this validation tests that at least 1 of source/content are non-null
+  # can fail either by not having been set all or by being set to null
+  validation {
+    condition = alltrue([
+      for r in var.runners :
+      lookup(r, "content", lookup(r, "source", null)) != null
+    ])
+    error_message = "A runner must specify a non-null 'content' or 'source'."
   }
   default = []
+}
+
+variable "prepend_ansible_installer" {
+  description = "Prepend Ansible installation script if any of the specified runners are of type ansible-local"
+  type        = bool
+  default     = true
 }

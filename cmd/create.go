@@ -23,6 +23,7 @@ import (
 	"hpc-toolkit/pkg/config"
 	"hpc-toolkit/pkg/modulewriter"
 	"log"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -91,11 +92,14 @@ func runCreateCmd(cmd *cobra.Command, args []string) {
 	if err := deploymentConfig.SetValidationLevel(validationLevel); err != nil {
 		log.Fatal(err)
 	}
-	deploymentConfig.ExpandConfig()
+	if err := deploymentConfig.ExpandConfig(); err != nil {
+		log.Fatal(err)
+	}
 	if err := modulewriter.WriteDeployment(&deploymentConfig.Config, outputDir, overwriteDeployment); err != nil {
 		var target *modulewriter.OverwriteDeniedError
 		if errors.As(err, &target) {
 			fmt.Printf("\n%s\n", err.Error())
+			os.Exit(1)
 		} else {
 			log.Fatal(err)
 		}

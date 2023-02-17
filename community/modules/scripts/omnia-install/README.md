@@ -1,13 +1,15 @@
 ## Description
 
-This module will install [DellHPC Omnia](https://github.com/dellhpc/omnia)
-onto a cluster supporting a slurm controller and compute nodes. To see a full
-example using omnia-install, see the
-[omnia-cluster example](../../../community/examples/omnia-cluster.yaml).
+This module will create a set of startup-script runners that will install and
+run [DellHPC Omnia](https://github.com/dellhpc/omnia) version 1.3 onto a set of
+VMs representing a slurm controller and compute nodes. For a full example using
+omnia-install, see the [omnia-cluster example].
 
 **Warning**: This module will create a user named "omnia" by default which has
 sudo permissions. You may want to remove this user and/or it's permissions from
 each node.
+
+[omnia-cluster example]: ../../../community/examples/omnia-cluster.yaml
 
 ## License
 
@@ -53,15 +55,16 @@ No resources.
 | <a name="input_manager_ips"></a> [manager\_ips](#input\_manager\_ips) | IPs of the Omnia manager nodes | `list(string)` | n/a | yes |
 | <a name="input_omnia_username"></a> [omnia\_username](#input\_omnia\_username) | Name of the user that installs omnia | `string` | `"omnia"` | no |
 | <a name="input_slurm_uid"></a> [slurm\_uid](#input\_slurm\_uid) | User ID of the slurm user | `number` | `981` | no |
+| <a name="input_virtualenv"></a> [virtualenv](#input\_virtualenv) | Path to a virtual environment on the Omnia manager and compute VMs that<br>should be used for installing packages with pip. Defaults to the virtual<br>environment created by the startup-scripts module, /usr/local/ghpc-venv.<br>If the virtual environment cannot be found, the system environment will be<br>used instead. | `string` | `"/usr/local/ghpc-venv"` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
 | <a name="output_copy_inventory_runner"></a> [copy\_inventory\_runner](#output\_copy\_inventory\_runner) | Runner to copy the inventory to the omnia manager using the startup-script module |
-| <a name="output_install_omnia_runner"></a> [install\_omnia\_runner](#output\_install\_omnia\_runner) | Runner to install Omnia using the startup-script module<br>This runner requires ansible to be installed. This can be achieved using the<br>install\_ansible.sh script as a prior runner in the startup-script module:<br>runners:<br>- type: shell<br>  source: modules/startup-script/examples/install\_ansible.sh<br>  destination: install\_ansible.sh<br>...<br>- $(omnia.install\_omnia\_runner) |
+| <a name="output_install_omnia_runner"></a> [install\_omnia\_runner](#output\_install\_omnia\_runner) | Runner to install Omnia using an ansible playbook. The startup-script module<br>will automatically handle installation of ansible.<br>- id: example-startup-script<br>  source: modules/scripts/startup-script<br>  settings:<br>    runners:<br>    - $(your-omnia-id.install\_omnia\_runner)<br>... |
 | <a name="output_inventory_file"></a> [inventory\_file](#output\_inventory\_file) | The inventory file for the omnia cluster |
 | <a name="output_omnia_user_warning"></a> [omnia\_user\_warning](#output\_omnia\_user\_warning) | Warn developers that the omnia user was created with sudo permissions |
-| <a name="output_setup_omnia_node_runner"></a> [setup\_omnia\_node\_runner](#output\_setup\_omnia\_node\_runner) | Runner to create the omnia user using the startup-script module.<br>This runner requires ansible to be installed. This can be achieved using the<br>install\_ansible.sh script as a prior runner in the startup-script module:<br>runners:<br>- type: shell<br>  source: modules/startup-script/examples/install\_ansible.sh<br>  destination: install\_ansible.sh<br>- $(omnia.setup\_omnia\_node\_runner)<br>... |
+| <a name="output_setup_omnia_node_runner"></a> [setup\_omnia\_node\_runner](#output\_setup\_omnia\_node\_runner) | Runner to create the omnia user using an ansible playbook. The startup-script<br>module will automatically handle installation of ansible.<br>- id: example-startup-script<br>  source: modules/scripts/startup-script<br>  settings:<br>    runners:<br>    - $(your-omnia-id.setup\_omnia\_node\_runner)<br>... |
 | <a name="output_setup_omnia_node_script"></a> [setup\_omnia\_node\_script](#output\_setup\_omnia\_node\_script) | An ansible script that adds the user that install omnia |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->

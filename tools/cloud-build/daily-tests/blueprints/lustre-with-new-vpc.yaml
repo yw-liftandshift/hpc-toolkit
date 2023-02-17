@@ -28,44 +28,80 @@ deployment_groups:
   # Source is an embedded module, denoted by "modules/*" without ./, ../, /
   # as a prefix. To refer to a local or community module, prefix with ./, ../ or /
   # Example - ./modules/network/pre-existing-vpc
-  - source: modules/network/vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/vpc
     settings:
       network_name: lustre-new-vpc
 
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: homefs
+  - id: homefs
+    source: modules/file-system/filestore
     use: [network1]
     settings:
       local_mount: /home
 
-  # Explicitly picking the local version of the module
-  - source: community/modules/file-system/DDN-EXAScaler
-    kind: terraform
-    id: scratchfs
+  - id: scratchfs
+    source: community/modules/file-system/DDN-EXAScaler
+    use: [network1]
     settings:
       local_mount: /scratch
-      network_self_link: $(network1.network_self_link)
-      subnetwork_self_link: $(network1.subnetwork_self_link)
-      subnetwork_address: $(network1.subnetwork_address)
+
+  # these runners are no longer necessary, but it is important that we test it still works
+  # even when added twice
+  - id: mount-exascaler
+    source: modules/scripts/startup-script
+    settings:
+      runners:
+      - $(scratchfs.install_ddn_lustre_client_runner)
+      - $(scratchfs.mount_runner)
 
   # Create a separate workstation to catch regressions in vm-instance
-  - source: ./modules/compute/vm-instance
-    kind: terraform
-    id: workstation
+  - id: workstation
+    source: ./modules/compute/vm-instance
     use:
     - network1
     - homefs
-    - scratchfs
+    - mount-exascaler
     settings:
-      name_prefix: test-workstation
+      name_prefix: test-workstation1
       machine_type: c2-standard-4
 
-  - source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
-    kind: terraform
-    id: compute_partition
+  - id: wait0
+    source: ./community/modules/scripts/wait-for-startup
+    settings:
+      instance_name: ((module.workstation.name[0]))
+
+  # test installing lustre from pre-existing-network-storage
+  - id: pre-fs
+    source: modules/file-system/pre-existing-network-storage
+    settings:
+      server_ip: ((module.scratchfs.network_storage.server_ip))
+      remote_mount: ((module.scratchfs.network_storage.remote_mount))
+      local_mount: ((module.scratchfs.network_storage.local_mount))
+      fs_type: ((module.scratchfs.network_storage.fs_type))
+
+  - id: mount-exascaler-from-pre-existing
+    source: modules/scripts/startup-script
+    settings:
+      runners:
+      - $(pre-fs.client_install_runner)
+      - $(pre-fs.mount_runner)
+
+  - id: install-luster-from-pre-existing
+    source: modules/compute/vm-instance
+    use:
+    - network1
+    - mount-exascaler-from-pre-existing
+    settings:
+      name_prefix: test-workstation2
+      machine_type: n2-standard-4
+
+  - id: wait1
+    source: ./community/modules/scripts/wait-for-startup
+    settings:
+      instance_name: ((module.install-luster-from-pre-existing.name[0]))
+
+  - id: compute_partition
+    source: ./community/modules/compute/SchedMD-slurm-on-gcp-partition
     use:
     - network1
     - homefs
@@ -74,18 +110,16 @@ deployment_groups:
       max_node_count: 2
       partition_name: compute
 
-  - source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-    kind: terraform
-    id: slurm_controller
+  - id: slurm_controller
+    source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
     use:
     - network1
     - homefs
     - scratchfs
     - compute_partition
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
-    kind: terraform
-    id: slurm_login
+  - id: slurm_login
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
     use:
     - network1
     - homefs

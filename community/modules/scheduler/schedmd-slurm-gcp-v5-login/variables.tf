@@ -1,5 +1,5 @@
 /**
- * Copyright 2022 Google LLC
+ * Copyright 2023 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 # Most variables have been sourced and modified from the SchedMD/slurm-gcp
-# github repository: https://github.com/SchedMD/slurm-gcp/tree/v5.0.3
+# github repository: https://github.com/SchedMD/slurm-gcp/tree/v5.1.0
 
 variable "project_id" {
   type        = string
@@ -31,23 +31,30 @@ variable "labels" {
 variable "disable_smt" {
   type        = bool
   description = "Disables Simultaneous Multi-Threading (SMT) on instance."
-  default     = false
+  default     = true
+}
+
+variable "deployment_name" {
+  description = "Name of the deployment."
+  type        = string
+}
+
+variable "disable_login_public_ips" {
+  description = "If set to false. The login will have a random public IP assigned to it. Ignored if access_config is set."
+  type        = bool
+  default     = true
 }
 
 variable "slurm_cluster_name" {
   type        = string
-  description = "Cluster name, used for resource naming and slurm accounting."
-
-  validation {
-    condition     = can(regex("(^[a-z][a-z0-9]*$)", var.slurm_cluster_name))
-    error_message = "Variable 'slurm_cluster_name' must be composed of only alphanumeric values and begin with a leter. regex: '(^[a-z][a-z0-9]*$)'."
-  }
+  description = "Cluster name, used for resource naming and slurm accounting. If not provided it will default to the first 8 characters of the deployment name (removing any invalid characters)."
+  default     = null
 }
 
 variable "controller_instance_id" {
   description = <<-EOD
-    The server-assigned unique identifier of the controller instance, typically
-    supplied as an output of the controler module.
+    The server-assigned unique identifier of the controller instance. This value
+    must be supplied as an output of the controller module, typically via `use`.
     EOD
   type        = string
 }
@@ -151,10 +158,26 @@ variable "gpu" {
   description = <<-EOD
     GPU information. Type and count of GPU to attach to the instance template. See
     https://cloud.google.com/compute/docs/gpus more details.
-    * type : the GPU type
-    * count : number of GPUs
+    - type : the GPU type, e.g. nvidia-tesla-t4, nvidia-a100-80gb, nvidia-tesla-a100, etc
+    - count : number of GPUs
+
+    If both 'var.gpu' and 'var.guest_accelerator' are set, 'var.gpu' will be used.
     EOD
   default     = null
+}
+
+variable "guest_accelerator" {
+  description = <<-EOD
+    Alternative method of providing 'var.gpu' with a consistent naming scheme to
+    other HPC Toolkit modules.
+
+    If both 'var.gpu' and 'var.guest_accelerator' are set, 'var.gpu' will be used.
+    EOD
+  type = list(object({
+    type  = string,
+    count = number
+  }))
+  default = null
 }
 
 variable "service_account" {
@@ -163,8 +186,9 @@ variable "service_account" {
     scopes = set(string)
   })
   description = <<-EOD
-    Service account to attach to the instances. See
-    'main.tf:local.service_account' for the default.
+    Service account to attach to the login instance. If not set, the
+    default compute service account for the given project will be used with the
+    "https://www.googleapis.com/auth/cloud-platform" scope.
     EOD
   default     = null
 }
@@ -239,37 +263,67 @@ variable "startup_script" {
   default     = ""
 }
 
+variable "instance_template" {
+  description = <<-EOD
+    Self link to a custom instance template. If set, other VM definition
+    variables such as machine_type and instance_image will be ignored in favor
+    of the provided instance template.
+
+    For more information on creating custom images for the instance template
+    that comply with Slurm on GCP see the "Slurm on GCP Custom Images" section
+    in docs/vm-images.md.
+    EOD
+  type        = string
+  default     = null
+}
+
+variable "instance_image" {
+  description = <<-EOD
+    Defines the image that will be used in the Slurm login node VM instances. This
+    value is overridden if any of `source_image`, `source_image_family` or
+    `source_image_project` are set.
+
+    Expected Fields:
+    name: The name of the image. Mutually exclusive with family.
+    family: The image family to use. Mutually exclusive with name.
+    project: The project where the image is hosted.
+
+    For more information on creating custom images that comply with Slurm on GCP
+    see the "Slurm on GCP Custom Images" section in docs/vm-images.md.
+    EOD
+  type        = map(string)
+  default = {
+    family  = "schedmd-v5-slurm-22-05-6-hpc-centos-7"
+    project = "projects/schedmd-slurm-public/global/images/family"
+  }
+
+  validation {
+    condition = length(var.instance_image) == 0 || (
+    can(var.instance_image["family"]) || can(var.instance_image["name"])) == can(var.instance_image["project"])
+    error_message = "The \"project\" is required if \"family\" or \"name\" are provided in var.instance_image."
+  }
+  validation {
+    condition     = length(var.instance_image) == 0 || can(var.instance_image["family"]) != can(var.instance_image["name"])
+    error_message = "Exactly one of \"family\" and \"name\" must be provided in var.instance_image."
+  }
+}
+
 variable "source_image_project" {
   type        = string
-  description = <<-EOD
-    Project path where the source image comes from. If not provided, this value
-    will default to the project hosting the slurm-gcp public images. More
-    information can be found in the slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image.
-    EOD
-  default     = null
+  description = "The hosting the custom VM image. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "source_image_family" {
   type        = string
-  description = <<-EOD
-    Source image family. If not provided, the default image family name for the
-    hpc-centos-7 version of the slurm-gcp public images will be used. More
-    information can be found in the slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image
-    EOD
-  default     = null
+  description = "The custom VM image family. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "source_image" {
   type        = string
-  description = <<-EOD
-    Source disk image. By default, the image used will be the hpc-centos7
-    version of the slurm-gcp public images. More information can be found in the
-    slurm-gcp docs:
-    https://github.com/SchedMD/slurm-gcp/blob/v5.0.2/docs/images.md#public-image
-    EOD
-  default     = null
+  description = "The custom VM image. It is recommended to use `instance_image` instead."
+  default     = ""
 }
 
 variable "disk_type" {
@@ -293,6 +347,12 @@ variable "disk_auto_delete" {
   type        = bool
   description = "Whether or not the boot disk should be auto-deleted."
   default     = true
+}
+
+variable "disk_labels" {
+  description = "Labels specific to the boot disk. These will be merged with var.labels."
+  type        = map(string)
+  default     = {}
 }
 
 variable "additional_disks" {

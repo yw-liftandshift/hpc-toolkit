@@ -32,10 +32,13 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"hpc-toolkit/pkg/modulereader"
-	"hpc-toolkit/pkg/sourcereader"
 )
 
-const expectedVarFormat = "$(vars.var_name) or $(module_id.var_name)"
+const (
+	expectedVarFormat string = "$(vars.var_name) or $(module_id.output_name)"
+	expectedModFormat string = "$(module_id) or $(group_id.module_id)"
+	matchLabelExp     string = `^[\p{Ll}\p{Lo}\p{N}_-]{1,63}$`
+)
 
 var errorMessages = map[string]string{
 	// general
@@ -46,24 +49,43 @@ var errorMessages = map[string]string{
 	"yamlMarshalError":   "failed to marshal the yaml config",
 	"fileSaveError":      "failed to write the expanded yaml",
 	// expand
-	"missingSetting":    "a required setting is missing from a module",
-	"globalLabelType":   "deployment variable 'labels' are not a map",
-	"settingsLabelType": "labels in module settings are not a map",
-	"invalidVar":        "invalid variable definition in",
-	"varNotFound":       "Could not find source of variable",
-	"varInAnotherGroup": "References to other groups are not yet supported",
-	"noOutput":          "Output not found for a variable",
+	"missingSetting":       "a required setting is missing from a module",
+	"globalLabelType":      "deployment variable 'labels' are not a map",
+	"settingsLabelType":    "labels in module settings are not a map",
+	"invalidVar":           "invalid variable definition in",
+	"invalidMod":           "invalid module reference",
+	"invalidDeploymentRef": "invalid deployment-wide reference (only \"vars\") is supported)",
+	"varNotFound":          "Could not find source of variable",
+	"varInAnotherGroup":    "References to other groups are not yet supported",
+	"intergroupImplicit":   "References to outputs from other groups must explicitly identify the group",
+	"intergroupOrder":      "References to outputs from other groups must be to earlier groups",
+	"referenceWrongGroup":  "Reference specified the wrong group for the module",
+	"noOutput":             "Output not found for a variable",
+	"varWithinStrings":     "variables \"$(...)\" within strings are not yet implemented. remove them or add a backslash to render literally.",
+	"groupNotFound":        "The group ID was not found",
 	// validator
-	"emptyID":        "a module id cannot be empty",
-	"emptySource":    "a module source cannot be empty",
-	"wrongKind":      "a module kind is invalid",
-	"extraSetting":   "a setting was added that is not found in the module",
-	"mixedModules":   "mixing modules of differing kinds in a deployment group is not supported",
-	"duplicateGroup": "group names must be unique",
-	"duplicateID":    "module IDs must be unique",
-	"emptyGroupName": "group name must be set for each deployment group",
-	"illegalChars":   "invalid character(s) found in group name",
-	"invalidOutput":  "requested output was not found in the module",
+	"emptyID":            "a module id cannot be empty",
+	"emptySource":        "a module source cannot be empty",
+	"wrongKind":          "a module kind is invalid",
+	"extraSetting":       "a setting was added that is not found in the module",
+	"settingWithPeriod":  "a setting name contains a period, which is not supported; variable subfields cannot be set independently in a blueprint.",
+	"settingInvalidChar": "a setting name must begin with a non-numeric character and all characters must be either letters, numbers, dashes ('-') or underscores ('_').",
+	"mixedModules":       "mixing modules of differing kinds in a deployment group is not supported",
+	"duplicateGroup":     "group names must be unique",
+	"duplicateID":        "module IDs must be unique",
+	"emptyGroupName":     "group name must be set for each deployment group",
+	"illegalChars":       "invalid character(s) found in group name",
+	"invalidOutput":      "requested output was not found in the module",
+	"varNotDefined":      "variable not defined",
+	"valueNotString":     "value was not of type string",
+	"valueEmptyString":   "value is an empty string",
+	"labelReqs":          "value can only contain lowercase letters, numeric characters, underscores and dashes, and must be between 1 and 63 characters long.",
+}
+
+// map[moved module path]replacing module path
+var movedModules = map[string]string{
+	"community/modules/scheduler/cloud-batch-job":        "modules/scheduler/batch-job-template",
+	"community/modules/scheduler/cloud-batch-login-node": "modules/scheduler/batch-login-node",
 }
 
 // DeploymentGroup defines a group of Modules that are all executed together
@@ -98,7 +120,9 @@ const (
 	testProjectExistsName
 	testRegionExistsName
 	testZoneExistsName
+	testModuleNotUsedName
 	testZoneInRegionName
+	testApisEnabledName
 )
 
 // this enum will be used to control how fatal validator failures will be
@@ -139,6 +163,10 @@ func (v validatorName) String() string {
 		return "test_zone_exists"
 	case testZoneInRegionName:
 		return "test_zone_in_region"
+	case testApisEnabledName:
+		return "test_apis_enabled"
+	case testModuleNotUsedName:
+		return "test_module_not_used"
 	default:
 		return "unknown_validator"
 	}
@@ -171,6 +199,7 @@ type Module struct {
 	WrapSettingsWith map[string][]string
 	Outputs          []string `yaml:"outputs,omitempty"`
 	Settings         map[string]interface{}
+	RequiredApis     map[string][]string `yaml:"required_apis"`
 }
 
 // createWrapSettingsWith ensures WrapSettingsWith field is not nil, if it is
@@ -194,6 +223,41 @@ type Blueprint struct {
 	TerraformBackendDefaults TerraformBackend  `yaml:"terraform_backend_defaults"`
 }
 
+// ConnectionKind defines the kind of module connection, defined by the source
+// of the connection. Currently, only Use is supported.
+type ConnectionKind int
+
+const (
+	undefinedConnection ConnectionKind = iota
+	useConnection
+	// explicitConnection
+	// globalConnection
+)
+
+// ModConnection defines details about connections between modules. Currently,
+// only modules connected with "use" are tracked.
+type ModConnection struct {
+	toID   string
+	fromID string
+	// Currently only supports useConnection
+	kind ConnectionKind
+	// List of variables shared from module `fromID` to module `toID`
+	sharedVariables []string
+}
+
+// Returns true if a connection does not functionally link the outputs and
+// inputs of the modules. This can happen when a module is connected with "use"
+// but none of the outputs of fromID match the inputs of toID.
+func (mc *ModConnection) isEmpty() (isEmpty bool) {
+	isEmpty = false
+	if mc.kind == useConnection {
+		if len(mc.sharedVariables) == 0 {
+			isEmpty = true
+		}
+	}
+	return
+}
+
 // DeploymentConfig is a container for the imported YAML data and supporting data for
 // creating the blueprint from it
 type DeploymentConfig struct {
@@ -201,17 +265,50 @@ type DeploymentConfig struct {
 	// Indexed by Resource Group name and Module Source
 	ModulesInfo map[string]map[string]modulereader.ModuleInfo
 	// Maps module ID to group index
-	ModuleToGroup map[string]int
-	expanded      bool
+	ModuleToGroup     map[string]int
+	expanded          bool
+	moduleConnections []ModConnection
 }
 
 // ExpandConfig expands the yaml config in place
-func (dc *DeploymentConfig) ExpandConfig() {
+func (dc *DeploymentConfig) ExpandConfig() error {
+	if err := dc.checkMovedModules(); err != nil {
+		return err
+	}
+	dc.addKindToModules()
 	dc.setModulesInfo()
 	dc.validateConfig()
 	dc.expand()
 	dc.validate()
 	dc.expanded = true
+	return nil
+}
+
+// listUnusedModules provides a mapping of modules to modules that are in the
+// "use" field, but not actually used.
+func (dc *DeploymentConfig) listUnusedModules() map[string][]string {
+	unusedModules := make(map[string][]string)
+	for _, conn := range dc.moduleConnections {
+		if conn.isEmpty() {
+			unusedModules[conn.fromID] = append(unusedModules[conn.fromID], conn.toID)
+		}
+	}
+	return unusedModules
+}
+
+func (dc *DeploymentConfig) checkMovedModules() error {
+	var err error
+	for _, grp := range dc.Config.DeploymentGroups {
+		for _, mod := range grp.Modules {
+			if replacingMod, ok := movedModules[strings.Trim(mod.Source, "./")]; ok {
+				err = fmt.Errorf("the blueprint references modules that have moved")
+				fmt.Printf(
+					"A module you are using has moved. %s has been replaced with %s. Please update the source in your blueprint and try again.\n",
+					mod.Source, replacingMod)
+			}
+		}
+	}
+	return err
 }
 
 // NewDeploymentConfig is a constructor for DeploymentConfig
@@ -223,7 +320,8 @@ func NewDeploymentConfig(configFilename string) (DeploymentConfig, error) {
 	}
 
 	newDeploymentConfig = DeploymentConfig{
-		Config: blueprint,
+		Config:            blueprint,
+		moduleConnections: []ModConnection{},
 	}
 	return newDeploymentConfig, nil
 }
@@ -304,20 +402,31 @@ func (dc DeploymentConfig) ExportBlueprint(outputFilename string) ([]byte, error
 
 func createModuleInfo(
 	deploymentGroup DeploymentGroup) map[string]modulereader.ModuleInfo {
-	modInfo := make(map[string]modulereader.ModuleInfo)
+	modsInfo := make(map[string]modulereader.ModuleInfo)
 	for _, mod := range deploymentGroup.Modules {
-		if _, exists := modInfo[mod.Source]; !exists {
-			reader := sourcereader.Factory(mod.Source)
-			ri, err := reader.GetModuleInfo(mod.Source, mod.Kind)
+		if _, exists := modsInfo[mod.Source]; !exists {
+			ri, err := modulereader.GetModuleInfo(mod.Source, mod.Kind)
 			if err != nil {
 				log.Fatalf(
 					"failed to get info for module at %s while setting dc.ModulesInfo: %e",
 					mod.Source, err)
 			}
-			modInfo[mod.Source] = ri
+			modsInfo[mod.Source] = ri
 		}
 	}
-	return modInfo
+	return modsInfo
+}
+
+// addKindToModules sets the kind to 'terraform' when empty.
+func (dc *DeploymentConfig) addKindToModules() {
+	for iGrp, grp := range dc.Config.DeploymentGroups {
+		for iMod, mod := range grp.Modules {
+			if mod.Kind == "" {
+				dc.Config.DeploymentGroups[iGrp].Modules[iMod].Kind =
+					"terraform"
+			}
+		}
+	}
 }
 
 // setModulesInfo populates needed information from modules
@@ -376,17 +485,22 @@ func checkModuleAndGroupNames(
 // are in the correct group
 func checkUsedModuleNames(
 	depGroups []DeploymentGroup, idToGroup map[string]int) error {
-	for iGrp, grp := range depGroups {
+	for _, grp := range depGroups {
 		for _, mod := range grp.Modules {
 			for _, usedMod := range mod.Use {
-				// Check if module even exists
-				if _, ok := idToGroup[usedMod]; !ok {
-					return fmt.Errorf("used module ID %s does not exist", usedMod)
+				ref, err := identifyModuleByReference(usedMod, grp)
+				if err != nil {
+					return err
 				}
-				// Ensure module is from the correct group
-				if idToGroup[usedMod] != iGrp {
-					return fmt.Errorf(
-						"used module ID %s not found in this Deployment Group", usedMod)
+				err = ref.validate(depGroups, idToGroup)
+				if err != nil {
+					return err
+				}
+
+				// TODO: remove this when support is added!
+				if ref.FromGroupID != ref.ToGroupID {
+					return fmt.Errorf("%s: %s is an intergroup reference",
+						errorMessages["varInAnotherGroup"], usedMod)
 				}
 			}
 		}
@@ -397,6 +511,10 @@ func checkUsedModuleNames(
 // validateConfig runs a set of simple early checks on the imported input YAML
 func (dc *DeploymentConfig) validateConfig() {
 	_, err := dc.Config.DeploymentName()
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = dc.Config.checkBlueprintName()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -420,7 +538,14 @@ func (dc *DeploymentConfig) SetCLIVariables(cliVariables []string) error {
 			return fmt.Errorf("invalid format: '%s' should follow the 'name=value' format", cliVar)
 		}
 
-		key, value := arr[0], arr[1]
+		// Convert the variable's string litteral to its equivalent default type.
+		var out interface{}
+		err := yaml.Unmarshal([]byte(arr[1]), &out)
+		if err != nil {
+			return fmt.Errorf("invalid input: unable to convert '%s' value '%s' to known type", arr[0], arr[1])
+		}
+
+		key, value := arr[0], out
 		dc.Config.Vars[key] = value
 	}
 
@@ -557,13 +682,14 @@ func ResolveVariables(
 	return nil
 }
 
-// DeploymentNameError signifies a problem with the blueprint deployment name.
-type DeploymentNameError struct {
-	cause string
+// InputValueError signifies a problem with the blueprint name.
+type InputValueError struct {
+	inputKey string
+	cause    string
 }
 
-func (err *DeploymentNameError) Error() string {
-	return fmt.Sprintf("deployment_name must be a string and cannot be empty, cause: %v", err.cause)
+func (err *InputValueError) Error() string {
+	return fmt.Sprintf("%v input error, cause: %v", err.inputKey, err.cause)
 }
 
 // ResolveGlobalVariables will resolve literal variables "((var.*))" in the
@@ -577,20 +703,66 @@ func (b Blueprint) ResolveGlobalVariables(ctyVars map[string]cty.Value) error {
 	return ResolveVariables(ctyVars, origin)
 }
 
+// isValidLabelValue checks if a string is a valid value for a GCP label.
+// For more information on valid label values, see the docs at:
+// https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements
+func isValidLabelValue(value string) bool {
+	return regexp.MustCompile(matchLabelExp).MatchString(value)
+}
+
 // DeploymentName returns the deployment_name from the config and does approperate checks.
 func (b *Blueprint) DeploymentName() (string, error) {
 	nameInterface, found := b.Vars["deployment_name"]
 	if !found {
-		return "", &DeploymentNameError{"deployment_name variable not defined."}
+		return "", &InputValueError{
+			inputKey: "deployment_name",
+			cause:    errorMessages["varNotFound"],
+		}
 	}
 
 	deploymentName, ok := nameInterface.(string)
 	if !ok {
-		return "", &DeploymentNameError{"deployment_name was not of type string."}
+		return "", &InputValueError{
+			inputKey: "deployment_name",
+			cause:    errorMessages["valueNotString"],
+		}
 	}
 
 	if len(deploymentName) == 0 {
-		return "", &DeploymentNameError{"deployment_name was an empty string."}
+		return "", &InputValueError{
+			inputKey: "deployment_name",
+			cause:    errorMessages["valueEmptyString"],
+		}
 	}
+
+	// Check that deployment_name is a valid label
+	if !isValidLabelValue(deploymentName) {
+		return "", &InputValueError{
+			inputKey: "deployment_name",
+			cause:    errorMessages["labelReqs"],
+		}
+	}
+
 	return deploymentName, nil
+}
+
+// checkBlueprintName returns an error if blueprint_name does not comply with
+// requirements for correct GCP label values.
+func (b *Blueprint) checkBlueprintName() error {
+
+	if len(b.BlueprintName) == 0 {
+		return &InputValueError{
+			inputKey: "blueprint_name",
+			cause:    errorMessages["valueEmptyString"],
+		}
+	}
+
+	if !isValidLabelValue(b.BlueprintName) {
+		return &InputValueError{
+			inputKey: "blueprint_name",
+			cause:    errorMessages["labelReqs"],
+		}
+	}
+
+	return nil
 }

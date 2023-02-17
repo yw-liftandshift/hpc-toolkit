@@ -17,9 +17,8 @@ controller for optimal performance at different scales.
 ### Example
 
 ```yaml
-- source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-  kind: terraform
-  id: slurm_controller
+- id: slurm_controller
+  source: community/modules/scheduler/SchedMD-slurm-on-gcp-controller
   use:
   - network1
   - homefs
@@ -33,6 +32,11 @@ node (defined elsewhere). The controller will also have the `homefs` file system
 mounted via the `use` field and manage one partition, also declared in the `use`
 field. For more context see the
 [hpc-cluster-small example](../../../../examples/hpc-cluster-small.yaml).
+
+## GPU Support
+
+More information on GPU support in Slurm on GCP and other HPC Toolkit modules
+can be found at [docs/gpu-support.md](../../../../docs/gpu-support.md)
 
 ## Support
 The HPC Toolkit team maintains the wrapper around the [slurm-on-gcp] terraform
@@ -64,25 +68,21 @@ limitations under the License.
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 0.14.0 |
-| <a name="requirement_google"></a> [google](#requirement\_google) | >= 3.83 |
 
 ## Providers
 
-| Name | Version |
-|------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | >= 3.83 |
+No providers.
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_slurm_cluster_controller"></a> [slurm\_cluster\_controller](#module\_slurm\_cluster\_controller) | github.com/SchedMD/slurm-gcp//tf/modules/controller/ | v4.2.0 |
+| <a name="module_slurm_cluster_compute_node"></a> [slurm\_cluster\_compute\_node](#module\_slurm\_cluster\_compute\_node) | github.com/SchedMD/slurm-gcp//tf/modules/compute/ | v4.2.1 |
+| <a name="module_slurm_cluster_controller"></a> [slurm\_cluster\_controller](#module\_slurm\_cluster\_controller) | github.com/SchedMD/slurm-gcp//tf/modules/controller/ | v4.2.1 |
 
 ## Resources
 
-| Name | Type |
-|------|------|
-| [google_compute_image.compute_image](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/compute_image) | data source |
+No resources.
 
 ## Inputs
 
@@ -106,7 +106,7 @@ limitations under the License.
 | <a name="input_deployment_name"></a> [deployment\_name](#input\_deployment\_name) | Name of the deployment | `string` | n/a | yes |
 | <a name="input_disable_compute_public_ips"></a> [disable\_compute\_public\_ips](#input\_disable\_compute\_public\_ips) | If set to true, create Cloud NAT gateway and enable IAP FW rules | `bool` | `true` | no |
 | <a name="input_disable_controller_public_ips"></a> [disable\_controller\_public\_ips](#input\_disable\_controller\_public\_ips) | If set to true, create Cloud NAT gateway and enable IAP FW rules | `bool` | `false` | no |
-| <a name="input_instance_image"></a> [instance\_image](#input\_instance\_image) | Slurm image to use for the controller instance | <pre>object({<br>    family  = string,<br>    project = string<br>  })</pre> | <pre>{<br>  "family": "schedmd-slurm-21-08-8-hpc-centos-7",<br>  "project": "schedmd-slurm-public"<br>}</pre> | no |
+| <a name="input_instance_image"></a> [instance\_image](#input\_instance\_image) | Slurm image to use for the controller instance.<br>Expected Fields:<br>name: The name of the image. Mutually exclusive with family.<br>family: The image family to use. Mutually exclusive with name.<br>project: The project where the image is hosted.<br>Custom images must comply with Slurm on GCP requirements. | `map(string)` | <pre>{<br>  "family": "schedmd-slurm-21-08-8-hpc-centos-7",<br>  "project": "schedmd-slurm-public"<br>}</pre> | no |
 | <a name="input_intel_select_solution"></a> [intel\_select\_solution](#input\_intel\_select\_solution) | Configure the cluster to meet the performance requirement of the Intel Select Solution | `string` | `null` | no |
 | <a name="input_jwt_key"></a> [jwt\_key](#input\_jwt\_key) | Specific libjwt key to use | `any` | `null` | no |
 | <a name="input_labels"></a> [labels](#input\_labels) | Labels to add to controller instance. List of key key, value pairs. | `any` | `{}` | no |

@@ -63,7 +63,13 @@ variable "tags" {
 }
 
 variable "image_family" {
-  description = "The family name of the image to be built. Image name will also be derived from this value. Defaults to `deployment_name`"
+  description = "The family name of the image to be built. Defaults to `deployment_name`"
+  type        = string
+  default     = null
+}
+
+variable "image_name" {
+  description = "The name of the image to be built. If not supplied, it will be set to image_family-$ISO_TIMESTAMP"
   type        = string
   default     = null
 }
@@ -75,9 +81,7 @@ first project ID in the list first, and fall back to the next in the list,
 until it finds the source image.
 EOD
   type        = list(string)
-  default = [
-    "cloud-hpc-image-public"
-  ]
+  default     = null
 }
 
 variable "source_image" {
@@ -147,13 +151,13 @@ variable "shell_scripts" {
 }
 
 variable "startup_script" {
-  description = "Startup script (as raw string) used to build the custom VM image (overridden by var.startup_script_file if both are supplied)"
+  description = "Startup script (as raw string) used to build the custom Linux VM image (overridden by var.startup_script_file if both are set)"
   type        = string
   default     = null
 }
 
 variable "startup_script_file" {
-  description = "Path to local shell script that will be uploaded as a startup script to customize the VM image"
+  description = "File path to local shell script that will be used to customize the Linux VM image (overrides var.startup_script)"
   type        = string
   default     = null
 }
@@ -168,4 +172,55 @@ variable "labels" {
   description = "Labels to apply to the short-lived VM"
   type        = map(string)
   default     = null
+}
+
+variable "accelerator_type" {
+  description = "Type of accelerator cards to attach to the VM; not necessary for families that always include GPUs (A2)."
+  type        = string
+  default     = null
+}
+
+variable "accelerator_count" {
+  description = "Number of accelerator cards to attach to the VM; not necessary for families that always include GPUs (A2)."
+  type        = number
+  default     = null
+}
+
+variable "on_host_maintenance" {
+  description = "Describes maintenance behavior for the instance. If left blank this will default to `MIGRATE` except the use of GPUs requires it to be `TERMINATE`"
+  type        = string
+  default     = null
+  validation {
+    condition     = var.on_host_maintenance == null ? true : contains(["MIGRATE", "TERMINATE"], var.on_host_maintenance)
+    error_message = "When set, the on_host_maintenance must be set to MIGRATE or TERMINATE."
+  }
+}
+
+# the plugin default is 5m; we have found it is sometimes hit
+variable "state_timeout" {
+  description = "The time to wait for instance state changes, including image creation"
+  type        = string
+  default     = "10m"
+}
+
+variable "metadata" {
+  description = "Instance metadata to attach to the build VM (startup-script key overridden by var.startup_script and var.startup_script_file if either is set)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "manifest_file" {
+  description = "File to which to write Packer build manifest"
+  type        = string
+  default     = "packer-manifest.json"
+}
+
+variable "communicator" {
+  description = "Communicator to use for provisioners that require access to VM (\"ssh\" or \"winrm\")"
+  type        = string
+  default     = null
+  validation {
+    condition     = var.communicator == null ? true : contains(["ssh", "winrm"], var.communicator)
+    error_message = "Set var.communicator to \"ssh\", \"winrm\", or null."
+  }
 }

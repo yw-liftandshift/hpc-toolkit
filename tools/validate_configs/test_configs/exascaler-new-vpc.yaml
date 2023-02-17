@@ -25,13 +25,11 @@ vars:
 deployment_groups:
 - group: primary
   modules:
-  - source: modules/network/vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/vpc
 
-  - source: ./community/modules/file-system/DDN-EXAScaler
-    kind: terraform
-    id: scratchfs
+  - id: scratchfs
+    source: ./community/modules/file-system/DDN-EXAScaler
     use: [network1]
     settings:
       local_mount: /scratch

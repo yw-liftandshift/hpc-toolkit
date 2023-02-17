@@ -16,7 +16,6 @@ package sourcereader
 
 import (
 	"fmt"
-	"hpc-toolkit/pkg/modulereader"
 	"io/fs"
 	"io/ioutil"
 	"os"
@@ -86,24 +85,6 @@ func copyFSToTempDir(fs BaseFS, modulePath string) (string, error) {
 	}
 	err = copyDirFromModules(fs, modulePath, tmpDir)
 	return tmpDir, err
-}
-
-// GetModuleInfo gets modulereader.ModuleInfo for the given kind from the embedded source
-func (r EmbeddedSourceReader) GetModuleInfo(modPath string, kind string) (modulereader.ModuleInfo, error) {
-	if !IsEmbeddedPath(modPath) {
-		return modulereader.ModuleInfo{}, fmt.Errorf("Source is not valid: %s", modPath)
-	}
-
-	modDir, err := copyFSToTempDir(ModuleFS, modPath)
-	defer os.RemoveAll(modDir)
-	if err != nil {
-		err = fmt.Errorf("failed to copy embedded module at %s to tmp dir %s: %v",
-			modPath, modDir, err)
-		return modulereader.ModuleInfo{}, err
-	}
-
-	reader := modulereader.Factory(kind)
-	return reader.GetInfo(modDir)
 }
 
 // GetModule copies the embedded source to a provided destination (the deployment directory)

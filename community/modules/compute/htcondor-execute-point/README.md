@@ -22,9 +22,8 @@ a startup script and network created in previous steps.
 > OS Login on all HTCondor nodes, including execute points.
 
 ```yaml
-- source: community/modules/compute/htcondor-execute-point
-  kind: terraform
-  id: htcondor_execute_point
+- id: htcondor_execute_point
+  source: community/modules/compute/htcondor-execute-point
   use:
   - network1
   - htcondor_configure_execute_point
@@ -96,6 +95,7 @@ No resources.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_deployment_name"></a> [deployment\_name](#input\_deployment\_name) | HPC Toolkit deployment name. HTCondor cloud resource names will include this value. | `string` | n/a | yes |
+| <a name="input_enable_oslogin"></a> [enable\_oslogin](#input\_enable\_oslogin) | Enable or Disable OS Login with "ENABLE" or "DISABLE". Set to "INHERIT" to inherit project OS Login setting. | `string` | `"DISABLE"` | no |
 | <a name="input_image"></a> [image](#input\_image) | HTCondor execute point VM image | <pre>object({<br>    family  = string,<br>    project = string<br>  })</pre> | <pre>{<br>  "family": "hpc-centos-7",<br>  "project": "cloud-hpc-image-public"<br>}</pre> | no |
 | <a name="input_labels"></a> [labels](#input\_labels) | Labels to add to HTConodr execute points | `map(string)` | n/a | yes |
 | <a name="input_machine_type"></a> [machine\_type](#input\_machine\_type) | Machine type to use for HTCondor execute points | `string` | `"n2-standard-4"` | no |

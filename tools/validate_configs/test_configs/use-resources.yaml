@@ -28,36 +28,31 @@ deployment_groups:
   # Source is an embedded module, denoted by "modules/*" without ./, ../,
   # / as a prefix. To refer to a local module, prefix with ./, ../ or /
   # Example - ./modules/network/pre-existing-vpc
-  - source: modules/network/pre-existing-vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: modules/network/pre-existing-vpc
 
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: homefs
+  - id: homefs
+    source: modules/file-system/filestore
     use: [network1]
     settings:
       local_mount: /home
       network_name: $(network1.network_name)
 
 
-  - source: community/modules/file-system/nfs-server
-    kind: terraform
-    id: projectsfs
+  - id: projectsfs
+    source: community/modules/file-system/nfs-server
     use: [network1]
 
-  - source: community/modules/file-system/DDN-EXAScaler
-    kind: terraform
-    id: scratchfs
+  - id: scratchfs
+    source: community/modules/file-system/DDN-EXAScaler
     settings:
       local_mount: /scratch
       network_self_link: $(network1.network_self_link)
       subnetwork_self_link: $(network1.subnetwork_self_link)
       subnetwork_address: $(network1.subnetwork_address)
 
-  - source: community/modules/compute/SchedMD-slurm-on-gcp-partition
-    kind: terraform
-    id: compute_partition
+  - id: compute_partition
+    source: community/modules/compute/SchedMD-slurm-on-gcp-partition
     use:
     - homefs
     - scratchfs
@@ -66,17 +61,15 @@ deployment_groups:
       max_node_count: 200
       partition_name: compute
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
-    kind: terraform
-    id: slurm_controller
+  - id: slurm_controller
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-controller
     use:
     - projectsfs
     - compute_partition
     - network1
 
-  - source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
-    kind: terraform
-    id: slurm_login
+  - id: slurm_login
+    source: ./community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
     use:
     - homefs
     - scratchfs

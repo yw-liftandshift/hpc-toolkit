@@ -10,9 +10,8 @@ accounting data storage.
 ### Example
 
 ```yaml
-- source: community/modules/database/cloudsql-federation
-  kind: terraform
-  id: project
+- id: project
+  source: community/modules/database/cloudsql-federation
   use: [network1]
   settings:
     sql_instance_name: slurm-sql6-demo

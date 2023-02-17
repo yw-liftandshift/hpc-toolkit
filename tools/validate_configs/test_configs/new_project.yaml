@@ -22,9 +22,8 @@ vars:
 deployment_groups:
 - group: primary
   modules:
-  - source: ./community/modules/project/new-project
-    kind: terraform
-    id: project
+  - id: project
+    source: ./community/modules/project/new-project
     settings:
       project_id: test_project
       folder_id: 334688113020  # random number

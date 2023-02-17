@@ -25,13 +25,11 @@ vars:
 deployment_groups:
 - group: primary
   modules:
-  - source: ./modules/network/pre-existing-vpc
-    kind: terraform
-    id: network1
+  - id: network1
+    source: ./modules/network/pre-existing-vpc
 
-  - source: ./modules/scripts/startup-script
-    kind: terraform
-    id: startup
+  - id: startup
+    source: ./modules/scripts/startup-script
     settings:
       runners:
       - type: shell
@@ -48,15 +46,13 @@ deployment_groups:
           tar zxvf /tmp/$1 -C /
         args: "foo.tgz 'Expanding the file'"
 
-  - source: ./modules/compute/vm-instance
-    kind: terraform
-    id: instance
+  - id: instance
+    source: ./modules/compute/vm-instance
     use: [network1, startup]
     settings:
       machine_type: e2-standard-4
 
-  - source: ./community/modules/scripts/wait-for-startup
-    kind: terraform
-    id: waiter
+  - id: waiter
+    source: ./community/modules/scripts/wait-for-startup
     settings:
       instance_name: ((module.instance.name[0]))

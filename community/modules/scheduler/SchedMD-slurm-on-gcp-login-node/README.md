@@ -14,9 +14,8 @@ node is used in conjunction with the
 ### Example
 
 ```yaml
-- source: community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
-  kind: terraform
-  id: slurm_login
+- id: slurm_login
+  source: community/modules/scheduler/SchedMD-slurm-on-gcp-login-node
   use:
   - network1
   - homefs
@@ -35,6 +34,11 @@ This creates a Slurm login node which is:
 
 For more context see the
 [hpc-cluster-small example](../../../../examples/hpc-cluster-small.yaml)
+
+## GPU Support
+
+More information on GPU support in Slurm on GCP and other HPC Toolkit modules
+can be found at [docs/gpu-support.md](../../../../docs/gpu-support.md)
 
 ## Support
 The HPC Toolkit team maintains the wrapper around the [slurm-on-gcp] terraform
@@ -66,25 +70,20 @@ limitations under the License.
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 0.14.0 |
-| <a name="requirement_google"></a> [google](#requirement\_google) | >= 3.83 |
 
 ## Providers
 
-| Name | Version |
-|------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | >= 3.83 |
+No providers.
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_slurm_cluster_login_node"></a> [slurm\_cluster\_login\_node](#module\_slurm\_cluster\_login\_node) | github.com/SchedMD/slurm-gcp//tf/modules/login/ | v4.2.0 |
+| <a name="module_slurm_cluster_login_node"></a> [slurm\_cluster\_login\_node](#module\_slurm\_cluster\_login\_node) | github.com/SchedMD/slurm-gcp//tf/modules/login/ | v4.2.1 |
 
 ## Resources
 
-| Name | Type |
-|------|------|
-| [google_compute_image.compute_image](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/compute_image) | data source |
+No resources.
 
 ## Inputs
 
@@ -97,7 +96,7 @@ limitations under the License.
 | <a name="input_controller_secondary_disk"></a> [controller\_secondary\_disk](#input\_controller\_secondary\_disk) | Create secondary disk mounted to controller node | `bool` | `false` | no |
 | <a name="input_deployment_name"></a> [deployment\_name](#input\_deployment\_name) | Name of the deployment | `string` | n/a | yes |
 | <a name="input_disable_login_public_ips"></a> [disable\_login\_public\_ips](#input\_disable\_login\_public\_ips) | If set to true, create Cloud NAT gateway and enable IAP FW rules | `bool` | `false` | no |
-| <a name="input_instance_image"></a> [instance\_image](#input\_instance\_image) | Disk OS image with Slurm preinstalled to use for login node | <pre>object({<br>    family  = string,<br>    project = string<br>  })</pre> | <pre>{<br>  "family": "schedmd-slurm-21-08-8-hpc-centos-7",<br>  "project": "schedmd-slurm-public"<br>}</pre> | no |
+| <a name="input_instance_image"></a> [instance\_image](#input\_instance\_image) | Disk OS image with Slurm preinstalled to use for login node.<br>Expected Fields:<br>name: The name of the image. Mutually exclusive with family.<br>family: The image family to use. Mutually exclusive with name.<br>project: The project where the image is hosted.<br>Custom images must comply with Slurm on GCP requirements. | `map(string)` | <pre>{<br>  "family": "schedmd-slurm-21-08-8-hpc-centos-7",<br>  "project": "schedmd-slurm-public"<br>}</pre> | no |
 | <a name="input_labels"></a> [labels](#input\_labels) | Labels to add to login instances. List of key key, value pairs. | `any` | `{}` | no |
 | <a name="input_login_instance_template"></a> [login\_instance\_template](#input\_login\_instance\_template) | Instance template to use to create controller instance | `string` | `null` | no |
 | <a name="input_login_machine_type"></a> [login\_machine\_type](#input\_login\_machine\_type) | Machine type to use for login node instances. | `string` | `"n2-standard-2"` | no |

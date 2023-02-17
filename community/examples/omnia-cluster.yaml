@@ -21,63 +21,53 @@ vars:
   deployment_name: omnia-cluster
   zone: us-central1-c
   region: us-central1
+  instance_image:
+    family: rocky-linux-8
+    project: rocky-linux-cloud
+
+# Documentation for each of the modules used below can be found at
+# https://github.com/GoogleCloudPlatform/hpc-toolkit/blob/main/modules/README.md
 
 deployment_groups:
 - group: primary
   modules:
 
   ## Network
-  - source: modules/network/vpc
-    kind: terraform
-    id: network
+  - id: network
+    source: modules/network/pre-existing-vpc
 
   ## File Systems
-  - source: modules/file-system/filestore
-    kind: terraform
-    id: homefs
+  - id: homefs
+    source: modules/file-system/filestore
     use: [network]
     settings:
       local_mount: "/home"
 
   ## Installation Scripts
-  - source: community/modules/scripts/omnia-install
-    kind: terraform
-    id: omnia
+  - id: omnia
+    source: community/modules/scripts/omnia-install
     outputs: [inventory_file, omnia_user_warning]
     settings:
       manager_ips: [localhost]
       compute_ips: $(compute.internal_ip)
 
-  - source: modules/scripts/startup-script
-    kind: terraform
-    id: startup-manager
+  - id: startup-manager
+    source: modules/scripts/startup-script
     settings:
       runners:
-      - type: shell
-        source: "modules/startup-script/examples/install_ansible.sh"
-        destination: "install_ansible.sh"
-      - $(homefs.install_nfs_client_runner)
-      - $(homefs.mount_runner)
       - $(omnia.setup_omnia_node_runner)
       - $(omnia.copy_inventory_runner)
       - $(omnia.install_omnia_runner)
 
-  - source: modules/scripts/startup-script
-    kind: terraform
-    id: startup-compute
+  - id: startup-compute
+    source: modules/scripts/startup-script
     settings:
       runners:
-      - type: shell
-        source: "modules/startup-script/examples/install_ansible.sh"
-        destination: "install_ansible.sh"
-      - $(homefs.install_nfs_client_runner)
-      - $(homefs.mount_runner)
       - $(omnia.setup_omnia_node_runner)
 
   ## Compute
-  - source: modules/compute/vm-instance
-    kind: terraform
-    id: manager
+  - id: manager
+    source: modules/compute/vm-instance
     use:
     - network
     - homefs
@@ -86,9 +76,8 @@ deployment_groups:
       name_prefix: omnia-manager
       machine_type: n2-standard-4
 
-  - source: modules/compute/vm-instance
-    kind: terraform
-    id: compute
+  - id: compute
+    source: modules/compute/vm-instance
     use:
     - network
     - homefs
@@ -98,10 +87,8 @@ deployment_groups:
       instance_count: 2
 
   # This module simply makes terraform wait until the startup script is complete
-  - source: community/modules/scripts/wait-for-startup
-    kind: terraform
-    id: wait
-    use:
-    - network
+  - id: wait
+    source: community/modules/scripts/wait-for-startup
     settings:
       instance_name: ((module.manager.name[0]))
+      timeout: 2100
