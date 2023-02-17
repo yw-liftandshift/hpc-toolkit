@@ -1,4 +1,4 @@
-blueprint_name: hpc-cluster
+blueprint_name: empty-blueprint
 
 vars:
   billing_account: ## Set GCP Billing Account Here ##
