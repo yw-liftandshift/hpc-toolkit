@@ -1,0 +1,185 @@
+blueprint_name: palm-model
+
+vars:
+  billing_account: ## Set GCP Billing Account Here ##
+  org_id: ## Set GCP Organization ID Here ##
+  folder_id: ## Set GCP Folder ID Here ##
+  project_id: ## Set GCP Project ID Here ##
+  deployment_name: ## Set Deployment Name Here ##
+  region: ## Set Region Here ##
+  zone: ## Set Zone Here ##
+  machine_type: ## Set Machine Type Here ##
+  max_node_count: ## Set Max Node Count Here ##
+  activate_apis:
+    - compute.googleapis.com
+    - iap.googleapis.com
+
+# TODO(Marcus): is this necessary?
+# terraform_backend_defaults:
+#   type: gcs
+#   configuration:
+#     bucket: hpc-toolkit-demo-tf-state #TODO: change this to your own GCS bucket
+
+deployment_groups:
+  - group: primary
+    modules:
+      - source: community/modules/project/new-project
+        kind: terraform
+        id: project1
+
+      - source: modules/network/vpc
+        kind: terraform
+        id: network1
+        use: [project1]
+
+      # TODO(Marcus)
+      # - source: modules/file-system/filestore
+      #   kind: terraform
+      #   id: appsfs-build
+      #   use: [network1]
+      #   settings:
+      #     local_mount: /apps
+      #   outputs: [ network_storage ]
+
+      ## Install Scripts
+      - source: community/modules/scripts/spack-install
+        kind: terraform
+        id: spack
+        settings:
+          install_dir: /apps/spack
+          spack_url: https://github.com/spack/spack
+          spack_ref: 8de726336f5b827b31e84b48b09955a99502a463
+          log_file: /var/log/spack.log
+          configs:
+            - type: file
+              scope: defaults
+              value: |
+                modules:
+                  default:
+                    tcl:
+                      hash_length: 0
+                      all:
+                        conflict:
+                          - '{name}'
+                      projections:
+                        all: '{name}/{version}-{compiler.name}-{compiler.version}'
+          # TODO(Marcus): is this necessary?
+          # spack_cache_url:
+          # - mirror_name: gcs_temporary_cache
+          # mirror_url: gs://42-gcd-hpc-toolkit-build-cache
+          compilers:
+            - gcc@8.2.0%gcc@4.8.5 target=x86_64 # fix original compiler to what we know they had
+          packages:
+            # packages that depend on GCC
+            - intel-mpi@2018.4.274%gcc@8.2.0
+            - cmake%gcc@8.2.0
+            - coreutils@8.32%gcc@8.2.0
+            - python@3.9.10%gcc@8.2.0
+            - py-pyqt5@5.13.1 ^python@3.9.10 ^cairo@1.16.0+X~fc+ft~gobject+pdf~png~svg%gcc@8.2.0
+              patches=7c4da77%gcc@8.2.0
+            - py-numpy@1.22.2 ^python@3.9.10%gcc@8.2.0
+            - py-scipy@1.8.0 ^python@3.9.10 ^py-numpy@1.22.2%gcc@8.2.0
+            - py-argparse@1.4.0 ^python@3.9.10%gcc@8.2.0
+            - py-argcomplete@1.12.3 ^python@3.9.10%gcc@8.2.0
+            - py-yamlreader ^python@3.9.10%gcc@8.2.0
+            - py-termcolor@1.1.0 ^python@3.9.10%gcc@8.2.0
+            # packages that depend on GCC and Intel
+            - py-netcdf4@1.5.3 ^python@3.9.10 ^py-numpy@1.22.2%gcc@8.2.0^intel-mpi@2018.4.274
+            - parallel-netcdf@1.12.2%gcc@8.2.0^intel-mpi@2018.4.274
+            - netcdf-c@4.7.4%gcc@8.2.0^intel-mpi@2018.4.274
+            - netcdf-fortran@4.5.3%gcc@8.2.0^intel-mpi@2018.4.274
+            - fftw@3.3.10%gcc@8.2.0^intel-mpi@2018.4.274
+
+      - source: modules/scripts/startup-script
+        kind: terraform
+        id: spack-startup
+        settings:
+          runners:
+            - type: shell
+              source: modules/startup-script/examples/install_ansible.sh
+              destination: install_ansible.sh
+            # TODO(Marcus): is this necessary?
+            # - $(appsfs-build.mount_runner)
+            - $(spack.install_spack_deps_runner)
+            - $(spack.install_spack_runner)
+            - type: data
+              source: ../../scripts/palm-install.yml
+              destination: /apps/palm/palm-install.yml
+            - type: data
+              source: ../../scripts/install.sh
+              destination: /apps/palm/install.sh
+            # This will keep the builder machine off at all times
+            # When you need to add packages here, you will need to
+            # manually turn on the builder machine.
+            - type: shell
+              content: "shutdown -h now"
+              destination: shutdown.sh
+
+      - source: modules/compute/vm-instance
+        kind: terraform
+        id: spack-builder
+        use:
+          - network1
+          # - appsfs-build # TODO(Marcus): is this necessary?
+          - spack-startup
+        settings:
+          name_prefix: spack-builder
+          # TODO(Marcus): the machine type previously here was c2-standard-30. Research spack building.
+          machine_type: e2-standard-4
+        # TODO(Marcus): not sure what this output was used for
+        # outputs: ["startup_instructions"]
+
+      # TODO(Marcus): is this necessary?
+      # - source: modules/file-system/filestore
+      #   kind: terraform
+      #   id: homefs
+      #   use: [network1]
+      #   settings:
+      #     local_mount: /home
+
+      # TODO(Marcus): is this necessary?
+      # - source: modules/file-system/pre-existing-network-storage
+      #   kind: terraform
+      #   id: appsfs
+      #   settings:
+      #     fs_type: "nfs"
+      #     local_mount: "/apps"
+      #     mount_options: "defaults,_netdev"
+      #     remote_mount: "nfsshare"
+      #     server_ip: "10.39.36.122" # Set the server IP once you create spack
+
+      - source: community/modules/compute/schedmd-slurm-gcp-v5-partition
+        kind: terraform
+        id: compute_partition
+        use:
+          - project1
+          - network1
+          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+          # - homefs
+        settings:
+          partition_name: compute
+          enable_shielded_vm: true
+
+      - source: community/modules/scheduler/schedmd-slurm-gcp-v5-controller
+        kind: terraform
+        id: slurm_controller
+        use:
+          - project1
+          - network1
+          - compute_partition
+          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
+          # - homefs
+        settings:
+          machine_type: e2-standard-4
+          enable_shielded_vm: true
+
+      - source: community/modules/scheduler/schedmd-slurm-gcp-v5-login
+        kind: terraform
+        id: slurm_login
+        use:
+          - project1
+          - network1
+          - slurm_controller
+        settings:
+          machine_type: e2-standard-2
+          enable_shielded_vm: true
