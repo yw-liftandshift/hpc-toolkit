@@ -9,7 +9,8 @@ vars:
   region: ## Set Region Here ##
   zone: ## Set Zone Here ##
   machine_type: ## Set Machine Type Here ##
-  max_node_count: ## Set Max Node Count Here ##
+  node_count_dynamic_max: ## Set Node Count Dynamic Max Here ##
+  slurm_cluster_name: hpcpalmcluster
   activate_apis:
     - compute.googleapis.com
     - iap.googleapis.com
