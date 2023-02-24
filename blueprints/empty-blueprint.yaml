@@ -11,9 +11,12 @@ vars:
   machine_type: ## Set Machine Type Here ##
   node_count_dynamic_max: ## Set Node Count Dynamic Max Here ##
   slurm_cluster_name: hpccluster
+  disable_public_ips: true
+  enable_shielded_vm: true
   activate_apis:
     - compute.googleapis.com
     - iap.googleapis.com
+    - monitoring.googleapis.com
 
 deployment_groups:
   - group: primary
@@ -21,24 +24,34 @@ deployment_groups:
       # Source is an embedded resource, denoted by "resources/*" without ./, ../, /
       # as a prefix. To refer to a local resource, prefix with ./, ../ or /
       # Example - ./resources/network/vpc
-      - source: community/modules/project/new-project
+      - id: project1
+        source: community/modules/project/new-project
         kind: terraform
-        id: project1
 
-      - source: modules/network/vpc
+      - id: network1
+        source: modules/network/vpc
         kind: terraform
-        id: network1
         use: [project1]
 
-      # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
-      # - source: modules/file-system/filestore
-      #   kind: terraform
-      #   id: homefs
-      #   use:
-      #     - project1
-      #     - network1
-      #   settings:
-      #     local_mount: /home
+      - id: homefs
+        source: community/modules/file-system/nfs-server
+        kind: terraform
+        use:
+          - project1
+          - network1
+        settings:
+          auto_delete_disk: true
+          local_mounts: ["/home"]
+
+      - id: debug_node_group
+        source: community/modules/compute/schedmd-slurm-gcp-v5-node-group
+        use:
+          - project1
+          - network1
+          - homefs
+        settings:
+          machine_type: n2-standard-2
+          node_count_dynamic_max: 2
 
       - source: community/modules/compute/schedmd-slurm-gcp-v5-partition
         kind: terraform
@@ -46,15 +59,22 @@ deployment_groups:
         use:
           - project1
           - network1
-          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
-          # - homefs
+          - homefs
+          - debug_node_group
         settings:
-          partition_name: debug
-          node_count_dynamic_max: 2
           enable_placement: false
-          machine_type: n2-standard-2
+          enable_shielded_vm: null
           is_default: true
-          enable_shielded_vm: true
+          machine_type: null
+          node_count_dynamic_max: null
+          partition_name: debug
+
+      - id: compute_node_group
+        source: community/modules/compute/schedmd-slurm-gcp-v5-node-group
+        use:
+          - project1
+          - network1
+          - homefs
 
       - source: community/modules/compute/schedmd-slurm-gcp-v5-partition
         kind: terraform
@@ -62,11 +82,13 @@ deployment_groups:
         use:
           - project1
           - network1
-          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
-          # - homefs
+          - homefs
+          - compute_node_group
         settings:
+          enable_shielded_vm: null
+          machine_type: null
+          node_count_dynamic_max: null
           partition_name: compute
-          enable_shielded_vm: true
 
       - source: community/modules/scheduler/schedmd-slurm-gcp-v5-controller
         kind: terraform
@@ -76,11 +98,9 @@ deployment_groups:
           - network1
           - debug_partition
           - compute_partition
-          # TODO(Marcus): See whether we can replace filestore with something like Google Cloud Storage due to costs.
-          # - homefs
+          - homefs
         settings:
           machine_type: e2-standard-4
-          enable_shielded_vm: true
 
       - source: community/modules/scheduler/schedmd-slurm-gcp-v5-login
         kind: terraform
@@ -88,9 +108,8 @@ deployment_groups:
         use:
           - project1
           - network1
+          - homefs
           - slurm_controller
         settings:
           machine_type: e2-standard-2
-          enable_shielded_vm: true
-          # TODO(Marcus): This module doesn't have this variable defined. See how we can create it without public IPs.
-          # disable_login_public_ips: true
+          disable_login_public_ips: true
