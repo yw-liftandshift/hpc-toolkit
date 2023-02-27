@@ -10,7 +10,7 @@ vars:
   zone: ## Set Zone Here ##
   machine_type: ## Set Machine Type Here ##
   node_count_dynamic_max: ## Set Node Count Dynamic Max Here ##
-  slurm_cluster_name: hpccluster
+  slurm_cluster_name: hpc1
   disable_public_ips: true
   enable_shielded_vm: true
   activate_apis:
@@ -21,9 +21,6 @@ vars:
 deployment_groups:
   - group: primary
     modules:
-      # Source is an embedded resource, denoted by "resources/*" without ./, ../, /
-      # as a prefix. To refer to a local resource, prefix with ./, ../ or /
-      # Example - ./resources/network/vpc
       - id: project1
         source: community/modules/project/new-project
         kind: terraform

@@ -1,0 +1,298 @@
+blueprint_name: palm-model
+
+vars:
+  billing_account: ## Set GCP Billing Account Here ##
+  org_id: ## Set GCP Organization ID Here ##
+  folder_id: ## Set GCP Folder ID Here ##
+  project_id: ## Set GCP Project ID Here ##
+  deployment_name: ## Set Deployment Name Here ##
+  region: ## Set Region Here ##
+  zone: ## Set Zone Here ##
+  machine_type: ## Set Machine Type Here ##
+  node_count_dynamic_max: ## Set Node Count Dynamic Max Here ##
+  slurm_cluster_name: palm1
+  disable_public_ips: true
+  enable_shielded_vm: true
+  activate_apis:
+    - compute.googleapis.com
+    - iap.googleapis.com
+    - monitoring.googleapis.com
+
+deployment_groups:
+  - group: primary
+    modules:
+      - id: project1
+        source: community/modules/project/new-project
+        kind: terraform
+
+      - id: network1
+        source: modules/network/vpc
+        kind: terraform
+        use: [project1]
+
+      - id: appsfs
+        source: community/modules/file-system/nfs-server
+        kind: terraform
+        use:
+          - project1
+          - network1
+        settings:
+          auto_delete_disk: true
+          local_mounts: ["/apps"]
+
+      - id: spack
+        source: community/modules/scripts/spack-install
+        settings:
+          install_dir: /apps/spack
+          spack_url: https://github.com/spack/spack
+          spack_ref: v0.19.1
+          log_file: /var/log/spack.log
+          spack_cache_url:
+            - mirror_name: "portalyoppworks"
+              mirror_url: gs://marcus-spack-build-cache-c2-standard-16-labi
+          caches_to_populate:
+            - type: "mirror"
+              path: gs://marcus-spack-build-cache-c2-standard-16-labi
+          gpg_keys:
+            - type: "new"
+              name: portalyoppworks
+              email: marcus.souza@yoppworks.com
+          configs:
+            - type: file
+              scope: defaults
+              content: |
+                modules:
+                  default:
+                    tcl:
+                      hash_length: 0
+                      all:
+                        conflict:
+                          - '{name}'
+                      projections:
+                        all: '{name}/{version}-{compiler.name}-{compiler.version}'
+          compilers:
+            - gcc@8.2.0%gcc@4.8.5 target=x86_64
+          environments:
+            - name: palm
+              content: |
+                spack:
+                  definitions:
+                  - compilers:
+                    - gcc@8.2.0
+                  - mpis:
+                    - intel-mpi@2018.4.274
+                  - python:
+                    - python@3.9.10
+                  - python_packages:
+                    - py-pip@22.2.2
+                    - py-wheel@0.37.1
+                    - py-google-cloud-storage@1.18.0
+                    - py-ansible@2.9.2
+                  - packages:
+                    - gcc@8.2.0
+                    - coreutils@8.32
+                    - cmake@3.24.3
+                    - flex@2.6.4
+                    - bison@3.8.2
+                  - mpi_packages:
+                    - netcdf-c@4.7.4
+                    - netcdf-fortran@4.5.3
+                    - parallel-netcdf@1.12.2
+                    - fftw@3.3.10
+                  specs:
+                  - matrix:
+                    - - $packages
+                    - - $%compilers
+                  - matrix:
+                    - - $python
+                    - - $%compilers
+                  - matrix:
+                    - - $python_packages
+                    - - $%compilers
+                    - - $^python
+                  - matrix:
+                    - - $mpis
+                    - - $%compilers
+                  - matrix:
+                    - - $mpi_packages
+                    - - $%compilers
+                    - - $^mpis
+
+      - id: spack_startup
+        source: modules/scripts/startup-script
+        kind: terraform
+        use:
+          - project1
+          - network1
+        settings:
+          runners:
+            - $(appsfs.mount_runner)
+            - $(spack.install_spack_deps_runner)
+            - $(spack.install_spack_runner)
+            - type: data
+              destination: /apps/palm/palm-install.yaml
+              content: |
+                - name: Install Palm Model
+                  hosts: localhost
+                  vars:
+                    install_prefix: ~/palm/current_version
+                    palm_version: v22.04-rc.1
+                    palm_dir: palm_model_system-{{ palm_version }}
+                    palm_model_url: https://gitlab.palm-model.org/releases/palm_model_system/-/archive/{{ palm_version }}/{{ palm_dir }}.tar.gz
+                  environment:
+                    install_prefix: "{{ install_prefix }}"
+                  tasks:
+                    - name: Make install directory
+                      file:
+                        path: "{{ install_prefix }}/{{ palm_dir }}"
+                        state: directory
+                        mode: '0755'
+                    - name: Get palm code
+                      get_url:
+                        url: "{{ palm_model_url }}"
+                        dest: "{{ install_prefix }}/{{ palm_dir }}"
+                        mode: '0664'
+                    - name: Extract palm model
+                      unarchive:
+                        src: "{{ install_prefix }}/{{ palm_dir }}/{{ palm_dir }}.tar.gz"
+                        dest: "{{ install_prefix }}"
+                    - name: Install python dependencies
+                      command: "python -m pip install -r {{ install_prefix }}/{{ palm_dir }}/requirements.txt"
+                    - name: Install local PALM configuration
+                      command: bash {{ palm_dir }}/install -p {{ install_prefix }}
+                      args:
+                        chdir: "{{ install_prefix }}"
+                    - name: Run basic test to validate installation
+                      command: "{{ install_prefix }}/bin/palmtest --cases urban_environment_restart --cores 4"
+                      args:
+                        chdir: "{{ install_prefix }}"
+                    - name: Create batch config based on default config
+                      copy:
+                        src: "{{ install_prefix }}/.palm.config.default"
+                        dest: "{{ install_prefix }}/.palm.config.batch"
+                        mode: '0664'
+                    - name: Update submit command in batch config
+                      lineinfile:
+                        path: "{{ install_prefix }}/.palm.config.batch"
+                        regexp: "^%submit_command"
+                        line: "%submit_command sbatch"
+                        state: present
+                    - name: Update default queue
+                      lineinfile:
+                        path: "{{ install_prefix }}/.palm.config.batch"
+                        regexp: "^%defaultqueue"
+                        line: "%defaultqueue compute"
+                        state: present
+                    - name: Update memory settings
+                      lineinfile:
+                        path: "{{ install_prefix }}/.palm.config.batch"
+                        regexp: "^%memory"
+                        line: "%memory 2300"
+                        state: present
+                    - name: Remove PBS directives
+                      lineinfile:
+                        path: "{{ install_prefix }}/.palm.config.batch"
+                        regexp: "^BDT?:#PBS"
+                        state: absent
+                    - name: Add Slurm directives
+                      blockinfile:
+                        path: "{{ install_prefix }}/.palm.config.batch"
+                        block: |
+                          BD:#!/bin/bash
+                          BD:#SBATCH --job-name=\{\{run_id\}\}
+                          BD:#SBATCH --time=\{\{cpu_hours\}\}:\{\{cpu_minutes\}\}:\{\{cpu_seconds\}\}
+                          BD:#SBATCH --ntasks=\{\{mpi_tasks\}\}
+                          BD:#SBATCH --nodes=\{\{nodes\}\}
+                          BD:#SBATCH --ntasks-per-node=\{\{tasks_per_node\}\}
+                          BD:#SBATCH --partition=\{\{queue\}\}
+                          BD:#SBATCH --output=\{\{job_protocol_file\}\}
+                          BD:#SBATCH --error=\{\{job_protocol_file\}\}
+                    - name: Install batch configuration
+                      command: "{{ install_prefix }}/bin/palmbuild -c batch -v"
+                      args:
+                        chdir: "{{ install_prefix }}"
+            - type: data
+              destination: /apps/palm/palm-install.sh
+              content: |
+                set -e
+                if [[ $EUID -eq 0 ]]; then
+                  echo "This script must NOT be run as root"
+                  exit 1
+                fi
+                sudo yum update -y && sudo yum install -y flex flex-devel
+                . /apps/spack/share/spack/setup-env.sh
+                spack env activate palm
+                export LD_LIBRARY_PATH="`spack location -i netcdf-fortran`/lib:`spack location -i fftw`/lib:$LD_LIBRARY_PATH"
+                ansible-playbook /apps/palm/palm-install.yaml
+            - type: shell
+              content: "shutdown -h now"
+              destination: shutdown.sh
+
+      - id: spack_builder
+        source: modules/compute/vm-instance
+        kind: terraform
+        use:
+          - project1
+          - network1
+          - appsfs
+          - spack_startup
+        settings:
+          name_prefix: spack-builder
+
+      - id: homefs
+        source: community/modules/file-system/nfs-server
+        kind: terraform
+        use:
+          - project1
+          - network1
+        settings:
+          auto_delete_disk: true
+          local_mounts: ["/home"]
+
+      - id: compute_node_group
+        source: community/modules/compute/schedmd-slurm-gcp-v5-node-group
+        use:
+          - project1
+          - network1
+          - homefs
+          - appsfs
+
+      - source: community/modules/compute/schedmd-slurm-gcp-v5-partition
+        kind: terraform
+        id: compute_partition
+        use:
+          - project1
+          - network1
+          - homefs
+          - appsfs
+          - compute_node_group
+        settings:
+          enable_shielded_vm: null
+          machine_type: null
+          node_count_dynamic_max: null
+          partition_name: compute
+
+      - source: community/modules/scheduler/schedmd-slurm-gcp-v5-controller
+        kind: terraform
+        id: slurm_controller
+        use:
+          - project1
+          - network1
+          - compute_partition
+          - homefs
+          - appsfs
+        settings:
+          machine_type: e2-standard-4
+
+      - source: community/modules/scheduler/schedmd-slurm-gcp-v5-login
+        kind: terraform
+        id: slurm_login
+        use:
+          - project1
+          - network1
+          - homefs
+          - appsfs
+          - slurm_controller
+        settings:
+          machine_type: e2-standard-2
+          disable_login_public_ips: true
