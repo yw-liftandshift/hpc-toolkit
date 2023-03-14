@@ -37,6 +37,7 @@ deployment_groups:
           - project1
           - network1
         settings:
+          machine_type: n2-standard-2
           auto_delete_disk: true
           local_mounts: ["/apps"]
 
@@ -246,6 +247,7 @@ deployment_groups:
           - project1
           - network1
         settings:
+          machine_type: n2-standard-2
           auto_delete_disk: true
           local_mounts: ["/home"]
 
@@ -282,7 +284,7 @@ deployment_groups:
           - homefs
           - appsfs
         settings:
-          machine_type: e2-standard-4
+          machine_type: n2-standard-8
 
       - source: community/modules/scheduler/schedmd-slurm-gcp-v5-login
         kind: terraform
@@ -294,5 +296,5 @@ deployment_groups:
           - appsfs
           - slurm_controller
         settings:
-          machine_type: e2-standard-2
+          machine_type: n2-standard-8
           disable_login_public_ips: true

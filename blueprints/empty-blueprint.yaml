@@ -37,6 +37,7 @@ deployment_groups:
           - project1
           - network1
         settings:
+          machine_type: n2-standard-2
           auto_delete_disk: true
           local_mounts: ["/home"]
 
