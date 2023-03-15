@@ -50,14 +50,7 @@ deployment_groups:
           log_file: /var/log/spack.log
           spack_cache_url:
             - mirror_name: "portalyoppworks"
-              mirror_url: gs://marcus-spack-build-cache-c2-standard-16-labi
-          caches_to_populate:
-            - type: "mirror"
-              path: gs://marcus-spack-build-cache-c2-standard-16-labi
-          gpg_keys:
-            - type: "new"
-              name: portalyoppworks
-              email: marcus.souza@yoppworks.com
+              mirror_url: yw-portal-spack-build-cache-c2-standard-16
           configs:
             - type: file
               scope: defaults
@@ -213,6 +206,12 @@ deployment_groups:
                       args:
                         chdir: "{{ install_prefix }}"
             - type: data
+              destination: /apps/spack/activate-palm-env.sh
+              content: |
+                . /apps/spack/share/spack/setup-env.sh
+                spack env activate palm
+                export LD_LIBRARY_PATH="`spack location -i netcdf-fortran`/lib:`spack location -i fftw`/lib:$LD_LIBRARY_PATH"
+            - type: data
               destination: /apps/palm/palm-install.sh
               content: |
                 set -e
@@ -221,10 +220,10 @@ deployment_groups:
                   exit 1
                 fi
                 sudo yum update -y && sudo yum install -y flex flex-devel
-                . /apps/spack/share/spack/setup-env.sh
-                spack env activate palm
-                export LD_LIBRARY_PATH="`spack location -i netcdf-fortran`/lib:`spack location -i fftw`/lib:$LD_LIBRARY_PATH"
+                . /apps/spack/activate-palm-env.sh
                 ansible-playbook /apps/palm/palm-install.yaml
+                echo '. /apps/spack/activate-palm-env.sh && export install_prefix=~/palm/current_version && export PATH="$install_prefix/bin:$PATH"' >> ~/.bashrc
+                source ~/.bashrc
             - type: shell
               content: sudo chmod -R 777 /apps
               destination: chmod-apps-dir.sh
