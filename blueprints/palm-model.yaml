@@ -226,6 +226,9 @@ deployment_groups:
                 export LD_LIBRARY_PATH="`spack location -i netcdf-fortran`/lib:`spack location -i fftw`/lib:$LD_LIBRARY_PATH"
                 ansible-playbook /apps/palm/palm-install.yaml
             - type: shell
+              content: sudo chmod -R 777 /apps
+              destination: chmod-apps-dir.sh
+            - type: shell
               content: "shutdown -h now"
               destination: shutdown.sh
 
