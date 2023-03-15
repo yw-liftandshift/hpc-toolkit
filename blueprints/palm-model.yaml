@@ -47,10 +47,10 @@ deployment_groups:
           install_dir: /apps/spack
           spack_url: https://github.com/spack/spack
           spack_ref: v0.19.1
-          log_file: /var/log/spack.log
+          log_file: /apps/spack.log
           spack_cache_url:
             - mirror_name: "portalyoppworks"
-              mirror_url: yw-portal-spack-build-cache-c2-standard-16
+              mirror_url: gs://yw-portal-spack-build-cache-c2-standard-16
           configs:
             - type: file
               scope: defaults
