@@ -116,3 +116,13 @@ variable "local_mounts" {
     error_message = "At least one local mount must be specified in var.local_mounts."
   }
 }
+
+variable "restore" {
+  type = bool
+  description = "If true instance will have a disk image restored instead of created"
+}
+
+variable "restore_image" {
+  type = string
+  description = "Image to restore"
+}

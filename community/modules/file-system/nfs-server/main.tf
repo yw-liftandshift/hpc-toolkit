@@ -48,6 +48,7 @@ locals {
 data "google_compute_default_service_account" "default" {}
 
 resource "google_compute_disk" "attached_disk" {
+  count   = var.restore ? 0 : 1
   project = var.project_id
   name    = "${local.name}-nfs-instance-disk"
   image   = var.image
@@ -58,6 +59,7 @@ resource "google_compute_disk" "attached_disk" {
 }
 
 resource "google_compute_instance" "compute_instance" {
+  count   = var.restore ? 0 : 1
   project      = var.project_id
   name         = "${local.name}-nfs-instance"
   zone         = var.zone
@@ -71,7 +73,41 @@ resource "google_compute_instance" "compute_instance" {
   }
 
   attached_disk {
-    source = google_compute_disk.attached_disk.id
+    source = google_compute_disk.attached_disk[0].id
+  }
+
+  network_interface {
+    network    = var.network_self_link
+    subnetwork = var.subnetwork_self_link
+  }
+
+  service_account {
+    email  = var.service_account == null ? data.google_compute_default_service_account.default.email : var.service_account
+    scopes = var.scopes
+  }
+
+  metadata                = var.metadata
+  metadata_startup_script = templatefile("${path.module}/scripts/install-nfs-server.sh.tpl", { local_mounts = var.local_mounts })
+
+  labels = var.labels
+}
+
+resource "google_compute_instance" "compute_instance" {
+  count   = var.restore ? 1 : 0
+  project      = var.project_id
+  name         = "${local.name}-nfs-instance"
+  zone         = var.zone
+  machine_type = var.machine_type
+
+  boot_disk {
+    auto_delete = var.auto_delete_disk
+    initialize_params {
+      image = var.image
+    }
+  }
+
+  attached_disk {
+    source = var.restore_image
   }
 
   network_interface {
