@@ -150,7 +150,7 @@ variable "disk_type" {
 variable "disk_size_gb" {
   description = "Size of boot disk to create for the partition compute nodes."
   type        = number
-  default     = 50
+  default     = 100
 }
 
 variable "disk_auto_delete" {
