@@ -89,7 +89,7 @@ variable "instance_image" {
     project = string
   })
   default = {
-    family  = "hpc-cenfedora-37-base-image"
+    family  = "fedora-37-base-image"
     project = "cloud-hpc-image-public"
   }
 }
