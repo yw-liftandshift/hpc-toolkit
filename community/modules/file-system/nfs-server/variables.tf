@@ -50,7 +50,7 @@ variable "type" {
 variable "image" {
   description = "the VM image used by the nfs server"
   type        = string
-  default     = "cloud-hpc-image-public/hpc-centos-7"
+  default     = "cloud-hpc-image-public/hpc-fedora-37-base-image"
 }
 
 variable "auto_delete_disk" {
