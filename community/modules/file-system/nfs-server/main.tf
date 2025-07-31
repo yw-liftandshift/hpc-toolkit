@@ -66,7 +66,7 @@ resource "google_compute_instance" "compute_instance" {
   boot_disk {
     auto_delete = var.auto_delete_disk
     initialize_params {
-      image = var.image
+      image = "centos-cloud/centos-stream-9" #var.image
     }
   }
 
