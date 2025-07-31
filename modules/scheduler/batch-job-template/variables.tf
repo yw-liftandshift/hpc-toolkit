@@ -173,7 +173,7 @@ variable "image" {
     project = string
   })
   default = {
-    family  = "fedora-37-base-image"
+    family  = "hpc-rocky-linux-8"
     project = "cloud-hpc-image-public"
   }
 }
