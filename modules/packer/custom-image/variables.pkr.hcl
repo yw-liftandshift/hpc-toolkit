@@ -93,7 +93,7 @@ variable "source_image" {
 variable "source_image_family" {
   description = "Alternative to source_image. Specify image family to build from latest image in family"
   type        = string
-  default     = "fedora-37-base-image"
+  default     = "hpc-rocky-linux-8"
 }
 
 variable "service_account_email" {
